@@ -16,19 +16,36 @@ async function request<T>(
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
 
-  const res = await fetch(url, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
+    });
+  } catch (e) {
+    // Network error / CORS / DNS
+    throw new ApiError(0, {
+      error: `Network error reaching ${url}: ${(e as Error).message}`,
+    });
+  }
 
   // Handle 204 No Content
   if (res.status === 204) return undefined as T;
 
-  const data = await res.json();
+  // Try JSON; fall back to text so a stray HTML/empty body becomes a readable error
+  const text = await res.text();
+  let data: Record<string, unknown>;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new ApiError(res.status, {
+      error: `Expected JSON from ${url} (HTTP ${res.status}). Got: ${text.slice(0, 120)}`,
+    });
+  }
 
   if (!res.ok) {
     throw new ApiError(res.status, data);
