@@ -15,14 +15,18 @@ const TEST_PHONE_PREFIX = 'test:';
 
 /**
  * Pega ou cria um contato "de teste" pra um user autenticado.
- * Phone fica como 'test:<userId>' pra nao colidir com numeros reais.
+ * Phone fica como 'test:<userId-truncado>' pra nao colidir com numeros reais.
+ * IMPORTANTE: schema atual limita phone_number a varchar(20), entao precisamos
+ * truncar o userId (UUID tem 36 chars). Usamos os primeiros 14 chars do UUID
+ * que ainda mantem unicidade dentro da account (que ja faz parte do where).
+ * Total: 5 ('test:') + 14 = 19 chars, cabe em varchar(20).
  */
 export async function getOrCreateTestContact(opts: {
   accountId: string;
   userId: string;
   userEmail: string;
 }): Promise<{ id: string }> {
-  const phone = `${TEST_PHONE_PREFIX}${opts.userId}`;
+  const phone = `${TEST_PHONE_PREFIX}${opts.userId.replace(/-/g, '').slice(0, 14)}`;
 
   const existing = await db.query.contacts.findFirst({
     where: and(eq(contacts.accountId, opts.accountId), eq(contacts.phoneNumber, phone)),
