@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -133,31 +134,13 @@ export default function BlingPage() {
 
   const callbackUrl = `${API_BASE_URL}/bling/auth/callback`;
 
+  void me;
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-pink flex items-center justify-center">
-              <span className="text-white font-bold text-lg">B</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Bling ERP</h1>
-              <p className="text-sm text-muted-foreground">
-                {me?.accounts[0]?.accountName ?? 'Conta'}
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/dashboard"
-            className="px-3 py-2 rounded-lg border border-border text-sm
-                       text-muted-foreground hover:bg-card transition-colors"
-          >
-            Voltar
-          </Link>
-        </div>
-
+    <AppShell
+      title="Bling ERP"
+      subtitle="Sincronizacao de catalogo de produtos"
+    >
+      <div className="space-y-6">
         {/* Notice / Error */}
         {notice && (
           <div className="rounded-lg border border-fce-green/40 bg-fce-green/10 p-3 text-sm text-fce-green">
@@ -326,6 +309,6 @@ export default function BlingPage() {
           </div>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }

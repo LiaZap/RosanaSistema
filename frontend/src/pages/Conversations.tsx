@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -35,9 +36,9 @@ const STATUS_LABELS: Record<ConversationRow['status'], string> = {
 };
 
 const STATUS_COLORS: Record<ConversationRow['status'], string> = {
-  nina: 'bg-fce-pink/20 text-fce-pink border-fce-pink/40',
-  human: 'bg-fce-green/20 text-fce-green border-fce-green/40',
-  paused: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
+  nina: 'bg-fce-pink/15 text-fce-pink border-fce-pink/30',
+  human: 'bg-fce-green/15 text-fce-green border-fce-green/30',
+  paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
   closed: 'bg-muted text-muted-foreground border-border',
 };
 
@@ -55,7 +56,7 @@ function timeAgo(date: string | null): string {
 
 export default function ConversationsPage() {
   const navigate = useNavigate();
-  const [me, setMe] = useState<MeResponse | null>(null);
+  const [, setMe] = useState<MeResponse | null>(null);
   const [accountId, setAccountId] = useState<string>('');
   const [filter, setFilter] = useState<'all' | 'nina' | 'human' | 'paused' | 'closed'>('all');
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
@@ -86,8 +87,8 @@ export default function ConversationsPage() {
       setConversations(data.conversations);
       const s = await api.get<Stats>(`/crm/stats?accountId=${accountId}`);
       setStats(s);
-    } catch (e) {
-      console.error(e);
+    } catch {
+      // ignore
     } finally {
       setLoading(false);
     }
@@ -98,7 +99,6 @@ export default function ConversationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, filter]);
 
-  // Auto-refresh a cada 15s
   useEffect(() => {
     if (!accountId) return;
     const interval = setInterval(() => loadList(), 15000);
@@ -109,88 +109,56 @@ export default function ConversationsPage() {
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return conversations;
-    return conversations.filter((c) => {
-      return (
+    return conversations.filter(
+      (c) =>
         (c.contactName ?? '').toLowerCase().includes(term) ||
         c.contactPhone.includes(term) ||
-        (c.lastMessage ?? '').toLowerCase().includes(term)
-      );
-    });
+        (c.lastMessage ?? '').toLowerCase().includes(term),
+    );
   }, [conversations, search]);
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-5xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-pink flex items-center justify-center">
-              <span className="text-white font-bold text-lg">C</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Conversas</h1>
-              <p className="text-sm text-muted-foreground">
-                {me?.accounts[0]?.accountName ?? 'Conta'}
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/dashboard"
-            className="px-3 py-2 rounded-lg border border-border text-sm
-                       text-muted-foreground hover:bg-card transition-colors"
-          >
-            Voltar
-          </Link>
-        </div>
-
+    <AppShell
+      title="Conversas"
+      subtitle={`${conversations.length} conversas · auto-refresh 15s`}
+    >
+      <div className="space-y-5">
         {/* Stats */}
         {stats && (
-          <div className="grid grid-cols-5 gap-3">
-            <button
-              onClick={() => setFilter('all')}
-              className={`glass rounded-xl p-3 text-left transition-colors ${
-                filter === 'all' ? 'ring-2 ring-fce-pink' : ''
-              }`}
-            >
-              <div className="text-xs uppercase text-muted-foreground">Total</div>
-              <div className="text-2xl font-bold text-foreground">{stats.total}</div>
-            </button>
-            <button
-              onClick={() => setFilter('nina')}
-              className={`glass rounded-xl p-3 text-left transition-colors ${
-                filter === 'nina' ? 'ring-2 ring-fce-pink' : ''
-              }`}
-            >
-              <div className="text-xs uppercase text-muted-foreground">DANI</div>
-              <div className="text-2xl font-bold text-fce-pink">{stats.nina}</div>
-            </button>
-            <button
-              onClick={() => setFilter('human')}
-              className={`glass rounded-xl p-3 text-left transition-colors ${
-                filter === 'human' ? 'ring-2 ring-fce-pink' : ''
-              }`}
-            >
-              <div className="text-xs uppercase text-muted-foreground">Humano</div>
-              <div className="text-2xl font-bold text-fce-green">{stats.human}</div>
-            </button>
-            <button
-              onClick={() => setFilter('paused')}
-              className={`glass rounded-xl p-3 text-left transition-colors ${
-                filter === 'paused' ? 'ring-2 ring-fce-pink' : ''
-              }`}
-            >
-              <div className="text-xs uppercase text-muted-foreground">Pausado</div>
-              <div className="text-2xl font-bold text-yellow-400">{stats.paused}</div>
-            </button>
-            <button
-              onClick={() => setFilter('closed')}
-              className={`glass rounded-xl p-3 text-left transition-colors ${
-                filter === 'closed' ? 'ring-2 ring-fce-pink' : ''
-              }`}
-            >
-              <div className="text-xs uppercase text-muted-foreground">Fechado</div>
-              <div className="text-2xl font-bold text-muted-foreground">{stats.closed}</div>
-            </button>
+          <div className="grid grid-cols-5 gap-2">
+            {(['all', 'nina', 'human', 'paused', 'closed'] as const).map((key) => {
+              const count = key === 'all' ? stats.total : stats[key];
+              const labels: Record<typeof key, string> = {
+                all: 'Total',
+                nina: 'DANI',
+                human: 'Humano',
+                paused: 'Pausado',
+                closed: 'Fechado',
+              };
+              const colors: Record<typeof key, string> = {
+                all: 'text-foreground',
+                nina: 'text-fce-pink',
+                human: 'text-fce-green',
+                paused: 'text-yellow-400',
+                closed: 'text-muted-foreground',
+              };
+              return (
+                <button
+                  key={key}
+                  onClick={() => setFilter(key)}
+                  className={`bg-card/40 border rounded-xl p-3 text-left transition-colors ${
+                    filter === key
+                      ? 'border-fce-pink/60 bg-fce-pink/5'
+                      : 'border-border/60 hover:border-border'
+                  }`}
+                >
+                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    {labels[key]}
+                  </div>
+                  <div className={`text-2xl font-bold mt-0.5 ${colors[key]}`}>{count}</div>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -199,57 +167,58 @@ export default function ConversationsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por nome, telefone ou conteudo..."
-          className="w-full px-4 py-3 rounded-lg bg-card border border-border
+          className="w-full px-4 py-2.5 rounded-lg bg-card/40 border border-border/60
                      text-foreground placeholder:text-muted-foreground text-sm
-                     focus:outline-none focus:ring-2 focus:ring-ring"
+                     focus:outline-none focus:ring-2 focus:ring-fce-pink/40 focus:border-fce-pink/40"
         />
 
         {/* List */}
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {loading && conversations.length === 0 && (
             <p className="text-center text-muted-foreground text-sm py-12">Carregando...</p>
           )}
           {!loading && filtered.length === 0 && (
             <p className="text-center text-muted-foreground text-sm py-12">
-              Nenhuma conversa {filter !== 'all' ? `com status "${STATUS_LABELS[filter as keyof typeof STATUS_LABELS]}"` : 'ainda'}
+              Nenhuma conversa
+              {filter !== 'all' ? ` com status "${STATUS_LABELS[filter as keyof typeof STATUS_LABELS]}"` : ''}
             </p>
           )}
           {filtered.map((conv) => (
             <Link
               key={conv.id}
               to={`/conversations/${conv.id}`}
-              className="glass rounded-xl p-4 flex gap-3 hover:bg-card/50 transition-colors"
+              className="bg-card/40 border border-border/60 hover:border-border hover:bg-card/60
+                         rounded-xl p-3.5 flex gap-3 transition-colors"
             >
-              {/* Avatar */}
-              <div className="w-12 h-12 rounded-full bg-card border border-border
-                              flex items-center justify-center text-lg font-bold text-foreground shrink-0">
+              <div
+                className="w-11 h-11 rounded-full bg-card border border-border
+                           flex items-center justify-center text-base font-bold text-foreground shrink-0"
+              >
                 {(conv.contactName?.[0] ?? conv.contactPhone[0] ?? '?').toUpperCase()}
               </div>
-
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-semibold text-foreground truncate">
+                  <span className="font-medium text-foreground truncate text-sm">
                     {conv.contactName ?? conv.contactPhone}
                   </span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${STATUS_COLORS[conv.status]}`}>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded border ${STATUS_COLORS[conv.status]}`}
+                  >
                     {STATUS_LABELS[conv.status]}
                   </span>
                 </div>
-                <p className="text-sm text-muted-foreground truncate mt-0.5">
+                <p className="text-xs text-muted-foreground truncate mt-0.5">
                   {conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human' ? '↗ ' : ''}
                   {conv.lastMessage ?? '(sem mensagens)'}
                 </p>
               </div>
-
-              {/* Time */}
-              <div className="text-xs text-muted-foreground shrink-0 self-start">
+              <div className="text-xs text-muted-foreground shrink-0 self-start mt-1">
                 {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
               </div>
             </Link>
           ))}
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

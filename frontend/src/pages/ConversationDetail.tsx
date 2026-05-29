@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -237,19 +238,20 @@ export default function ConversationDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-muted-foreground text-sm">Carregando...</div>
-      </div>
+      <AppShell title="Conversa" bare>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+          Carregando...
+        </div>
+      </AppShell>
     );
   }
   if (!detail) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background gap-3">
-        <p className="text-muted-foreground text-sm">Conversa nao encontrada</p>
-        <Link to="/conversations" className="text-fce-pink text-sm">
-          Voltar pra lista
-        </Link>
-      </div>
+      <AppShell title="Conversa nao encontrada" bare>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+          Conversa nao encontrada
+        </div>
+      </AppShell>
     );
   }
 
@@ -258,32 +260,18 @@ export default function ConversationDetailPage() {
   const isClosed = conversation.status === 'closed';
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <div className="border-b border-border bg-background/80 backdrop-blur p-4 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <Link
-            to="/conversations"
-            className="text-muted-foreground hover:text-foreground text-sm"
-          >
-            ← Lista
-          </Link>
-          <div className="flex-1 text-center">
-            <div className="font-semibold text-foreground">
-              {conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'Sem contato'}
-            </div>
-            <div className="text-xs text-muted-foreground font-mono">
-              {conversation.contact?.phoneNumber}
-            </div>
-          </div>
-          <span
-            className={`text-[10px] px-2 py-1 rounded border ${STATUS_COLORS[conversation.status]}`}
-          >
-            {STATUS_LABELS[conversation.status]}
-          </span>
-        </div>
-      </div>
-
+    <AppShell
+      title={conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'Conversa'}
+      subtitle={conversation.contact?.phoneNumber}
+      actions={
+        <span
+          className={`text-[10px] px-2 py-1 rounded border ${STATUS_COLORS[conversation.status]}`}
+        >
+          {STATUS_LABELS[conversation.status]}
+        </span>
+      }
+      bare
+    >
       {/* Action bar */}
       <div className="border-b border-border bg-card/30 p-3">
         <div className="max-w-3xl mx-auto flex gap-2 justify-center flex-wrap">
@@ -759,6 +747,6 @@ export default function ConversationDetailPage() {
           </form>
         </div>
       </div>
-    </div>
+    </AppShell>
   );
 }

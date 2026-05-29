@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -138,39 +139,22 @@ export default function DaniTestPage() {
     }
   }
 
+  void me;
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-pink flex items-center justify-center">
-              <span className="text-white font-bold text-lg">D</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">DANI - Teste</h1>
-              <p className="text-xs text-muted-foreground font-mono">
-                {conversationId ? `conv ${conversationId.slice(0, 8)}...` : 'sem conversa'}
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleNewConversation}
-              className="px-3 py-2 rounded-lg border border-border text-sm
-                         text-muted-foreground hover:bg-card transition-colors"
-            >
-              Nova conversa
-            </button>
-            <Link
-              to="/dashboard"
-              className="px-3 py-2 rounded-lg border border-border text-sm
-                         text-muted-foreground hover:bg-card transition-colors"
-            >
-              Voltar
-            </Link>
-          </div>
-        </div>
+    <AppShell
+      title="DANI - Teste"
+      subtitle={conversationId ? `conv ${conversationId.slice(0, 8)}...` : 'sem conversa'}
+      actions={
+        <button
+          onClick={handleNewConversation}
+          className="px-3 py-2 rounded-lg border border-border text-sm
+                     text-muted-foreground hover:bg-card transition-colors"
+        >
+          Nova conversa
+        </button>
+      }
+    >
+      <div className="space-y-6 max-w-3xl mx-auto">
 
         {/* Chat */}
         <div className="glass rounded-xl p-5 min-h-[400px] max-h-[60vh] overflow-y-auto space-y-3">
@@ -253,6 +237,6 @@ export default function DaniTestPage() {
           </button>
         </form>
       </div>
-    </div>
+    </AppShell>
   );
 }

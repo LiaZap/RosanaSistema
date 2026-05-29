@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -223,38 +224,19 @@ export default function AppointmentsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-pink flex items-center justify-center">
-              <span className="text-white font-bold text-lg">📅</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Agendamentos</h1>
-              <p className="text-sm text-muted-foreground">
-                {me?.accounts[0]?.accountName ?? ''} · {appts.length} agendamentos
-              </p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setShowNew(true)}
-              className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold"
-            >
-              + Novo
-            </button>
-            <Link
-              to="/dashboard"
-              className="px-3 py-2 rounded-lg border border-border text-sm
-                         text-muted-foreground hover:bg-card transition-colors"
-            >
-              Voltar
-            </Link>
-          </div>
-        </div>
-
+    <AppShell
+      title="Agendamentos"
+      subtitle={`${appts.length} agendamentos`}
+      actions={
+        <button
+          onClick={() => setShowNew(true)}
+          className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold"
+        >
+          + Novo
+        </button>
+      }
+    >
+      <div className="space-y-6">
         {error && (
           <div className="rounded-lg border border-fce-red/40 bg-fce-red/10 p-3 text-sm text-fce-red">
             {error}
@@ -450,6 +432,6 @@ export default function AppointmentsPage() {
           </div>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

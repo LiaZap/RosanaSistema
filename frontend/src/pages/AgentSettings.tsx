@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import AppShell from '../components/AppShell';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -118,31 +119,13 @@ export default function AgentSettingsPage() {
     setNotice('Prompt restaurado. Clica em Salvar pra aplicar.');
   }
 
+  void me;
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="max-w-3xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl gradient-pink flex items-center justify-center">
-              <span className="text-white font-bold text-lg">A</span>
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Configuracao da DANI</h1>
-              <p className="text-sm text-muted-foreground">
-                {me?.accounts[0]?.accountName ?? ''}
-              </p>
-            </div>
-          </div>
-          <Link
-            to="/dashboard"
-            className="px-3 py-2 rounded-lg border border-border text-sm
-                       text-muted-foreground hover:bg-card transition-colors"
-          >
-            Voltar
-          </Link>
-        </div>
-
+    <AppShell
+      title="Configuracao da DANI"
+      subtitle="Identidade, modelo IA e prompt customizado"
+    >
+      <div className="space-y-6">
         {notice && (
           <div className="rounded-lg border border-fce-green/40 bg-fce-green/10 p-3 text-sm text-fce-green">
             {notice}
@@ -338,6 +321,6 @@ export default function AgentSettingsPage() {
           </form>
         )}
       </div>
-    </div>
+    </AppShell>
   );
 }
