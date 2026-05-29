@@ -21,6 +21,7 @@ import {
 } from '../db/schema.js';
 import { saveMessage } from '../lib/dani-conversations.js';
 import { getEvolutionSettings, sendTextMessage } from '../lib/evolution-client.js';
+import { analyzeConversation } from '../lib/dani-analysis.js';
 import { logger } from '../lib/logger.js';
 
 const crm = new Hono();
@@ -283,6 +284,26 @@ crm.get('/stats', requireAuth, async (c) => {
   }
 
   return c.json(stats);
+});
+
+// ── POST /crm/conversations/:id/analyze ─────────────
+// Roda analise IA da conversa via Gemini com JSON estruturado
+crm.post('/conversations/:id/analyze', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  await assertConversationInAccount(conversationId, accountId);
+
+  try {
+    const analysis = await analyzeConversation(conversationId);
+    return c.json({ analysis });
+  } catch (err) {
+    logger.error({ conversationId, err: (err as Error).message }, '[CRM] analyze failed');
+    throw new AppError(`Analise falhou: ${(err as Error).message}`, 500);
+  }
 });
 
 // ── GET /crm/dashboard ──────────────────────────────
