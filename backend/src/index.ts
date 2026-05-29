@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import healthRoutes from './routes/health.js';
 import daniRoutes from './routes/dani.js';
 import blingRoutes from './routes/bling.js';
+import whatsappRoutes from './routes/whatsapp.js';
 
 const app = new Hono();
 
@@ -28,6 +29,7 @@ app.onError(errorHandler);
 app.route('/auth', authRoutes);
 app.route('/dani', daniRoutes);
 app.route('/bling', blingRoutes);
+app.route('/whatsapp', whatsappRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────
@@ -45,7 +47,7 @@ async function main() {
 
   const server = serve({ fetch: app.fetch, port }, () => {
     logger.info(`[API] FCE Backend v0.1.0 on http://localhost:${port}`);
-    logger.info('[API] Routes: /health /auth/* /dani/* /bling/*');
+    logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/*');
   });
 
   // ── Graceful shutdown ──

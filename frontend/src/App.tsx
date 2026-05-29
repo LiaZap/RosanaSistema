@@ -3,6 +3,7 @@ import AuthPage from './pages/Auth';
 import DashboardPage from './pages/Dashboard';
 import DaniTestPage from './pages/DaniTest';
 import BlingPage from './pages/Bling';
+import WhatsAppPage from './pages/WhatsApp';
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dani" element={<DaniTestPage />} />
         <Route path="/bling" element={<BlingPage />} />
+        <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

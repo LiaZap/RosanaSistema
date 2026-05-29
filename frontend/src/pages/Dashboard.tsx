@@ -87,6 +87,13 @@ export default function DashboardPage() {
               Testar DANI
             </Link>
             <Link
+              to="/whatsapp"
+              className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
+                         hover:bg-card transition-colors"
+            >
+              WhatsApp
+            </Link>
+            <Link
               to="/bling"
               className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
                          hover:bg-card transition-colors"
