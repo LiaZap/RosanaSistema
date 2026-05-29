@@ -19,10 +19,16 @@ export interface BlingTokens {
   token_type: string;
 }
 
-/** Monta URL de autorização OAuth2 */
+/**
+ * Monta URL de autorização OAuth2.
+ *
+ * IMPORTANTE: Bling NAO aceita redirect_uri no query string do authorize.
+ * Ele compara o request com o redirect_uri cadastrado no app, e qualquer
+ * diferenca (incluindo o parametro existir) causa redirect_uri_mismatch.
+ * Por isso so passamos response_type, client_id e state.
+ */
 export function buildAuthorizeUrl(opts: {
   clientId: string;
-  redirectUri: string;
   state: string;
 }): string {
   const params = new URLSearchParams({
@@ -30,8 +36,6 @@ export function buildAuthorizeUrl(opts: {
     client_id: opts.clientId,
     state: opts.state,
   });
-  // Bling NÃO aceita redirect_uri no authorize (vem do app config). Mantemos por compat.
-  if (opts.redirectUri) params.set('redirect_uri', opts.redirectUri);
   return `${BLING_AUTHORIZE_URL}?${params.toString()}`;
 }
 

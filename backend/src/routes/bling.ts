@@ -146,13 +146,12 @@ bling.get('/auth/start', requireAuth, async (c) => {
     path: '/',
   });
 
-  const redirectUri = `${API_BASE_URL}/bling/auth/callback`;
   const authorizeUrl = buildAuthorizeUrl({
     clientId: cred.clientId,
-    redirectUri,
     state,
   });
 
+  logger.info({ accountId, callbackUrl: `${API_BASE_URL}/bling/auth/callback` }, '[Bling] OAuth start');
   return c.redirect(authorizeUrl, 302);
 });
 
