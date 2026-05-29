@@ -6,6 +6,7 @@ import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/error.js';
 import authRoutes from './routes/auth.js';
 import healthRoutes from './routes/health.js';
+import daniRoutes from './routes/dani.js';
 
 const app = new Hono();
 
@@ -24,6 +25,7 @@ app.onError(errorHandler);
 // ── Routes ───────────────────────────────────────────
 
 app.route('/auth', authRoutes);
+app.route('/dani', daniRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────
@@ -41,7 +43,7 @@ async function main() {
 
   const server = serve({ fetch: app.fetch, port }, () => {
     logger.info(`[API] FCE Backend v0.1.0 on http://localhost:${port}`);
-    logger.info('[API] Routes: /health /auth/*');
+    logger.info('[API] Routes: /health /auth/* /dani/*');
   });
 
   // ── Graceful shutdown ──

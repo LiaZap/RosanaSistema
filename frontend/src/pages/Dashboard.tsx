@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 
 interface MeResponse {
@@ -78,13 +78,22 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground">Filhos com Estilo</p>
             </div>
           </div>
-          <button
-            onClick={handleLogout}
-            className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground
-                       hover:bg-card transition-colors"
-          >
-            Sair
-          </button>
+          <div className="flex gap-2">
+            <Link
+              to="/dani"
+              className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold
+                         hover:opacity-90 transition-opacity"
+            >
+              Testar DANI
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground
+                         hover:bg-card transition-colors"
+            >
+              Sair
+            </button>
+          </div>
         </div>
 
         {/* User Card */}
