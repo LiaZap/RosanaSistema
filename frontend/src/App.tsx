@@ -8,6 +8,7 @@ import ConversationsPage from './pages/Conversations';
 import ConversationDetailPage from './pages/ConversationDetail';
 import CloudinaryPage from './pages/Cloudinary';
 import PipelinePage from './pages/Pipeline';
+import AppointmentsPage from './pages/Appointments';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
         <Route path="/conversations/:id" element={<ConversationDetailPage />} />
         <Route path="/cloudinary" element={<CloudinaryPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
+        <Route path="/appointments" element={<AppointmentsPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

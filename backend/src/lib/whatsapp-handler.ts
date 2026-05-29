@@ -169,10 +169,14 @@ export async function handleMessageUpsert(
     history.pop();
   }
 
-  // 5. Chama DANI
+  // 5. Chama DANI (passa contactId pras tools precisarem dele)
   let daniResult;
   try {
-    daniResult = await processDaniMessage(text, { accountId, history });
+    daniResult = await processDaniMessage(text, {
+      accountId,
+      contactId: contact.id,
+      history,
+    });
   } catch (err) {
     logger.error({ accountId, err: (err as Error).message }, '[WhatsApp] DANI failed');
     return {

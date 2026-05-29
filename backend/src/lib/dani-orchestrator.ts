@@ -44,6 +44,7 @@ export function stripFillerPrefix(text: string): { clean: string; stripped: bool
 
 export interface DaniContext {
   accountId: string;
+  contactId?: string | null;
   history?: ChatTurn[];
 }
 
@@ -84,11 +85,11 @@ export async function processDaniMessage(
 
   const modelMode = settings?.aiModelMode ?? 'flash';
 
-  // Tool handler vinculado ao accountId
+  // Tool handler vinculado ao accountId + contactId (pra agendamento)
   const toolHandler = async (name: string, args: Record<string, unknown>) => {
     const handler = TOOL_HANDLERS[name];
     if (!handler) throw new Error(`Unknown tool: ${name}`);
-    return handler(args, { accountId: ctx.accountId });
+    return handler(args, { accountId: ctx.accountId, contactId: ctx.contactId ?? null });
   };
 
   const generation = await generateDaniReply({

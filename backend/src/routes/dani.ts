@@ -74,17 +74,26 @@ dani.post('/chat', requireAuth, async (c) => {
   let { conversationId } = parsed.data;
   await assertAccountMember(user.id, accountId);
 
-  // Garante conversation ativa
+  // Garante conversation ativa + sabe o contactId
+  let resolvedContactId: string | null = null;
   if (!conversationId) {
     const contact = await getOrCreateTestContact({
       accountId,
       userId: user.id,
       userEmail: user.email,
     });
+    resolvedContactId = contact.id;
     const conv = await getOrCreateActiveConversation({ accountId, contactId: contact.id });
     conversationId = conv.id;
   } else {
     await assertConversationInAccount(conversationId, accountId);
+    // Recupera contactId via conversation
+    const convRow = await db
+      .select({ contactId: conversations.contactId })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    resolvedContactId = convRow[0]?.contactId ?? null;
   }
 
   // Carrega historico ANTES de salvar a nova mensagem
@@ -109,8 +118,12 @@ dani.post('/chat', requireAuth, async (c) => {
     content: message,
   });
 
-  // Processa via Gemini
-  const result = await processDaniMessage(message, { accountId, history });
+  // Processa via Gemini (passa contactId pras tools de agendamento)
+  const result = await processDaniMessage(message, {
+    accountId,
+    contactId: resolvedContactId,
+    history,
+  });
 
   // Salva resposta da DANI
   await saveMessage({
