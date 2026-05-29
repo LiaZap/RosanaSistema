@@ -87,6 +87,13 @@ export default function DashboardPage() {
               Conversas
             </Link>
             <Link
+              to="/pipeline"
+              className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
+                         hover:bg-card transition-colors"
+            >
+              Pipeline
+            </Link>
+            <Link
               to="/dani"
               className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
                          hover:bg-card transition-colors"

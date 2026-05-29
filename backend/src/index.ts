@@ -11,6 +11,7 @@ import blingRoutes from './routes/bling.js';
 import whatsappRoutes from './routes/whatsapp.js';
 import crmRoutes from './routes/crm.js';
 import cloudinaryRoutes from './routes/cloudinary.js';
+import pipelineRoutes from './routes/pipeline.js';
 
 const app = new Hono();
 
@@ -34,6 +35,7 @@ app.route('/bling', blingRoutes);
 app.route('/whatsapp', whatsappRoutes);
 app.route('/crm', crmRoutes);
 app.route('/cloudinary', cloudinaryRoutes);
+app.route('/pipeline', pipelineRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────
@@ -51,7 +53,7 @@ async function main() {
 
   const server = serve({ fetch: app.fetch, port }, () => {
     logger.info(`[API] FCE Backend v0.1.0 on http://localhost:${port}`);
-    logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/*');
+    logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/* /pipeline/*');
   });
 
   // ── Graceful shutdown ──
