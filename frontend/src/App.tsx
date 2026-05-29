@@ -9,6 +9,7 @@ import ConversationDetailPage from './pages/ConversationDetail';
 import CloudinaryPage from './pages/Cloudinary';
 import PipelinePage from './pages/Pipeline';
 import AppointmentsPage from './pages/Appointments';
+import AgentSettingsPage from './pages/AgentSettings';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dani" element={<DaniTestPage />} />
+        <Route path="/agent" element={<AgentSettingsPage />} />
         <Route path="/bling" element={<BlingPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="/conversations" element={<ConversationsPage />} />

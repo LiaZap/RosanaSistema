@@ -11,9 +11,12 @@ import {
 import { db } from '../db/client.js';
 import {
   accountMembers,
+  appointments,
   contacts,
   conversations,
+  deals,
   messages,
+  produtosCatalogo,
   whatsappSessions,
 } from '../db/schema.js';
 import { saveMessage } from '../lib/dani-conversations.js';
@@ -280,6 +283,98 @@ crm.get('/stats', requireAuth, async (c) => {
   }
 
   return c.json(stats);
+});
+
+// ── GET /crm/dashboard ──────────────────────────────
+// KPIs agregados pra Dashboard
+crm.get('/dashboard', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay());
+  const endOfWeek = new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  // Run all queries in parallel
+  const [
+    msgsToday,
+    msgsBy7d,
+    convStats,
+    contactCount,
+    apptThisWeek,
+    dealsThisMonth,
+    produtosTotal,
+  ] = await Promise.all([
+    db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(messages)
+      .where(and(eq(messages.accountId, accountId), sql`${messages.createdAt} >= ${startOfDay}`))
+      .then((r) => r[0]?.count ?? 0),
+
+    db
+      .select({
+        day: sql<string>`to_char(date_trunc('day', ${messages.createdAt}), 'YYYY-MM-DD')`.as('day'),
+        count: sql<number>`cast(count(*) as int)`,
+      })
+      .from(messages)
+      .where(and(eq(messages.accountId, accountId), sql`${messages.createdAt} >= ${sevenDaysAgo}`))
+      .groupBy(sql`date_trunc('day', ${messages.createdAt})`)
+      .orderBy(sql`date_trunc('day', ${messages.createdAt}) asc`),
+
+    db
+      .select({ status: conversations.status, count: sql<number>`cast(count(*) as int)` })
+      .from(conversations)
+      .where(eq(conversations.accountId, accountId))
+      .groupBy(conversations.status),
+
+    db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(contacts)
+      .where(eq(contacts.accountId, accountId))
+      .then((r) => r[0]?.count ?? 0),
+
+    db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(appointments)
+      .where(
+        and(
+          eq(appointments.accountId, accountId),
+          sql`${appointments.date} >= ${startOfWeek}`,
+          sql`${appointments.date} < ${endOfWeek}`,
+        ),
+      )
+      .then((r) => r[0]?.count ?? 0),
+
+    db
+      .select({ count: sql<number>`cast(count(*) as int)`, value: sql<string>`cast(coalesce(sum(${deals.value}), 0) as text)` })
+      .from(deals)
+      .where(and(eq(deals.accountId, accountId), sql`${deals.createdAt} >= ${startOfMonth}`))
+      .then((r) => ({ count: r[0]?.count ?? 0, value: Number(r[0]?.value ?? 0) })),
+
+    db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(produtosCatalogo)
+      .where(eq(produtosCatalogo.accountId, accountId))
+      .then((r) => r[0]?.count ?? 0),
+  ]);
+
+  const convByStatus = { nina: 0, human: 0, paused: 0, closed: 0 };
+  for (const row of convStats) convByStatus[row.status] = row.count;
+
+  return c.json({
+    messagesToday: msgsToday,
+    messagesLast7Days: msgsBy7d.map((r) => ({ day: r.day, count: r.count })),
+    conversations: convByStatus,
+    contactsTotal: contactCount,
+    appointmentsThisWeek: apptThisWeek,
+    dealsThisMonth: dealsThisMonth,
+    produtosTotal,
+  });
 });
 
 export default crm;
