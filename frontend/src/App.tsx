@@ -6,6 +6,7 @@ import BlingPage from './pages/Bling';
 import WhatsAppPage from './pages/WhatsApp';
 import ConversationsPage from './pages/Conversations';
 import ConversationDetailPage from './pages/ConversationDetail';
+import CloudinaryPage from './pages/Cloudinary';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="/conversations" element={<ConversationsPage />} />
         <Route path="/conversations/:id" element={<ConversationDetailPage />} />
+        <Route path="/cloudinary" element={<CloudinaryPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

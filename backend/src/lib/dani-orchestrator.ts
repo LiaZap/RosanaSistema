@@ -8,7 +8,14 @@ import {
   type ToolCallRecord,
 } from './gemini-client.js';
 import { DANI_TOOLS, TOOL_HANDLERS } from './dani-tools.js';
+import { buscarProdutoDetalhe } from './dani-products.js';
 import { logger } from './logger.js';
+
+export interface DaniAttachment {
+  type: 'image';
+  url: string;
+  caption?: string;
+}
 
 /**
  * Strip filler placeholders que o modelo costuma gerar.
@@ -47,6 +54,7 @@ export interface DaniResult {
   fillerStripped: boolean;
   toolCalls: ToolCallRecord[];
   iterations: number;
+  attachments: DaniAttachment[];
 }
 
 /**
@@ -106,6 +114,27 @@ export async function processDaniMessage(
     ? clean
     : 'Pode me contar mais sobre o que voce esta procurando?';
 
+  // Extrai attachments das tool calls de detalhe (DANI quer mandar foto)
+  const attachments: DaniAttachment[] = [];
+  for (const tc of generation.toolCalls) {
+    if (tc.name === 'buscar_produto_detalhe') {
+      const consulta = String((tc.args as Record<string, unknown>).consulta ?? '');
+      if (consulta) {
+        try {
+          const produto = await buscarProdutoDetalhe({ accountId: ctx.accountId, consulta });
+          if (produto?.imagem) {
+            attachments.push({
+              type: 'image',
+              url: produto.imagem,
+            });
+          }
+        } catch {
+          // ignore - sem foto, manda texto
+        }
+      }
+    }
+  }
+
   return {
     reply: finalReply,
     modelUsed: modelMode,
@@ -113,5 +142,6 @@ export async function processDaniMessage(
     fillerStripped: stripped,
     toolCalls: generation.toolCalls,
     iterations: generation.iterations,
+    attachments,
   };
 }

@@ -107,6 +107,13 @@ export default function DashboardPage() {
             >
               Bling
             </Link>
+            <Link
+              to="/cloudinary"
+              className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
+                         hover:bg-card transition-colors"
+            >
+              Cloudinary
+            </Link>
             <button
               onClick={handleLogout}
               className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground

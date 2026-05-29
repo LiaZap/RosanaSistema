@@ -8,6 +8,13 @@
       "when": 1779898942600,
       "tag": "0000_fuzzy_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780090313456,
+      "tag": "0001_groovy_loki",
+      "breakpoints": true
     }
   ]
 }

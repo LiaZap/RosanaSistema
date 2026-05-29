@@ -163,6 +163,46 @@ export async function sendTextMessage(opts: {
   return { messageId };
 }
 
+/**
+ * Envia uma imagem (por URL) com caption opcional.
+ */
+export async function sendMediaMessage(opts: {
+  settings: EvolutionSettings;
+  instanceName: string;
+  phoneNumber: string;
+  mediaUrl: string;
+  caption?: string;
+  mediaType?: 'image' | 'video' | 'document';
+}): Promise<{ messageId: string | null }> {
+  const number = opts.phoneNumber.replace(/[^0-9]/g, '');
+  const mediaType = opts.mediaType ?? 'image';
+
+  const res = await fetch(`${opts.settings.apiUrl}/message/sendMedia/${opts.instanceName}`, {
+    method: 'POST',
+    headers: headers(opts.settings.apiKey),
+    body: JSON.stringify({
+      number,
+      mediatype: mediaType,
+      media: opts.mediaUrl,
+      caption: opts.caption ?? '',
+      fileName: `${mediaType}.${mediaType === 'image' ? 'jpg' : 'mp4'}`,
+      delay: 100,
+    }),
+  });
+
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Evolution sendMedia ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const json = JSON.parse(text);
+  const messageId = json?.key?.id ?? null;
+  logger.info(
+    { instance: opts.instanceName, to: number, messageId, mediaType },
+    '[Evolution] media sent',
+  );
+  return { messageId };
+}
+
 /** Configura webhook na instancia (idempotente) */
 export async function setWebhook(opts: {
   settings: EvolutionSettings;

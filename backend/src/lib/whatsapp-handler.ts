@@ -5,9 +5,11 @@ import { loadHistory, saveMessage } from './dani-conversations.js';
 import { processDaniMessage } from './dani-orchestrator.js';
 import {
   getEvolutionSettings,
+  sendMediaMessage,
   sendTextMessage,
   upsertSessionStatus,
 } from './evolution-client.js';
+import { transformedUrl } from './cloudinary-client.js';
 import { logger } from './logger.js';
 
 /**
@@ -189,10 +191,9 @@ export async function handleMessageUpsert(
     processedByNina: true,
   });
 
-  // 7. Envia via Evolution
+  // 7. Envia via Evolution (primeiro foto se houver, depois texto)
   try {
     const settings = await getEvolutionSettings(accountId);
-    // Precisa do instanceName - busca em whatsapp_sessions
     const session = await db.query.whatsappSessions.findFirst({
       where: eq(whatsappSessions.accountId, accountId),
     });
@@ -205,12 +206,27 @@ export async function handleMessageUpsert(
         skipped: 'no whatsapp session',
       };
     }
-    await sendTextMessage({
-      settings,
-      instanceName: session.instanceName,
-      phoneNumber: phone,
-      text: daniResult.reply,
-    });
+
+    // Phase 5: se ha attachment imagem do Cloudinary, manda foto com caption
+    const firstImage = daniResult.attachments.find((a) => a.type === 'image');
+    if (firstImage && firstImage.url.includes('res.cloudinary.com')) {
+      // Foto com texto da DANI como caption (1 mensagem)
+      await sendMediaMessage({
+        settings,
+        instanceName: session.instanceName,
+        phoneNumber: phone,
+        mediaUrl: transformedUrl(firstImage.url),
+        caption: daniResult.reply,
+        mediaType: 'image',
+      });
+    } else {
+      await sendTextMessage({
+        settings,
+        instanceName: session.instanceName,
+        phoneNumber: phone,
+        text: daniResult.reply,
+      });
+    }
   } catch (err) {
     logger.error({ accountId, err: (err as Error).message }, '[WhatsApp] send failed');
   }

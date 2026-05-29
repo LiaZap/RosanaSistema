@@ -282,6 +282,18 @@ export const blingCredentials = pgTable('bling_credentials', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const cloudinaryCredentials = pgTable('cloudinary_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }).unique(),
+  cloudName: varchar('cloud_name', { length: 255 }),
+  apiKey: varchar('api_key', { length: 255 }),
+  apiSecret: text('api_secret'),
+  uploadTag: varchar('upload_tag', { length: 100 }).default('fce_catalogo'),
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // ── Media ────────────────────────────────────────────
 
 export const mediaLibrary = pgTable('media_library', {
@@ -415,6 +427,10 @@ export const produtosCatalogoRelations = relations(produtosCatalogo, ({ one }) =
 
 export const blingCredentialsRelations = relations(blingCredentials, ({ one }) => ({
   account: one(accounts, { fields: [blingCredentials.accountId], references: [accounts.id] }),
+}));
+
+export const cloudinaryCredentialsRelations = relations(cloudinaryCredentials, ({ one }) => ({
+  account: one(accounts, { fields: [cloudinaryCredentials.accountId], references: [accounts.id] }),
 }));
 
 export const mediaLibraryRelations = relations(mediaLibrary, ({ one }) => ({
