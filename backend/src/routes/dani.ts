@@ -129,6 +129,8 @@ dani.post('/chat', requireAuth, async (c) => {
       durationMs: result.durationMs,
       fillerStripped: result.fillerStripped,
       historyTurns: history.length,
+      iterations: result.iterations,
+      toolCalls: result.toolCalls.map((tc) => ({ name: tc.name, args: tc.args })),
     },
   });
 });

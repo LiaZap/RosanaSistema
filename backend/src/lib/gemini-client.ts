@@ -1,4 +1,9 @@
-import { GoogleGenerativeAI, type GenerativeModel } from '@google/generative-ai';
+import {
+  GoogleGenerativeAI,
+  type FunctionDeclaration,
+  type GenerativeModel,
+  type Content,
+} from '@google/generative-ai';
 import { logger } from './logger.js';
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -11,7 +16,6 @@ const client = new GoogleGenerativeAI(apiKey ?? '');
 
 /**
  * Resolve um modo logico (flash/pro/preview) pro nome do modelo Gemini.
- * Mantemos isso configuravel via nina_settings.aiModelMode.
  */
 export function resolveModelName(mode: string | null | undefined): string {
   switch ((mode ?? 'flash').toLowerCase()) {
@@ -35,18 +39,39 @@ export function getModel(modeOrName?: string | null): GenerativeModel {
 
 export type ChatTurn = { role: 'user' | 'model'; text: string };
 
+export interface ToolCallRecord {
+  name: string;
+  args: Record<string, unknown>;
+  resultPreview: string; // primeiros 200 chars do JSON pra log
+}
+
+export interface GenerateResult {
+  text: string;
+  toolCalls: ToolCallRecord[];
+  iterations: number;
+}
+
+const MAX_TOOL_ITERATIONS = 5;
+
 /**
- * Wrapper minimo de chat. Recebe systemPrompt + historico + nova mensagem,
- * devolve texto da resposta.
+ * Gera resposta da DANI com suporte a function calling.
  *
- * Phase 2A: sem tools. Phase 2B vai adicionar functionDeclarations + toolCall handling.
+ * Loop:
+ *  1. Envia mensagem do user
+ *  2. Se Gemini sugere chamada(s) de tool, executa todas em paralelo
+ *  3. Manda resultado(s) como functionResponse
+ *  4. Repete ate Gemini retornar texto sem chamada (max 5 iteracoes)
+ *
+ * Se tools=null, comporta-se como Phase 2A (chat normal).
  */
 export async function generateDaniReply(opts: {
   systemPrompt: string;
   history: ChatTurn[];
   userMessage: string;
   modelMode?: string | null;
-}): Promise<string> {
+  tools?: FunctionDeclaration[];
+  toolHandler?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+}): Promise<GenerateResult> {
   if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on the backend');
   }
@@ -59,24 +84,96 @@ export async function generateDaniReply(opts: {
       topP: 0.95,
       maxOutputTokens: 800,
     },
+    ...(opts.tools && opts.tools.length > 0
+      ? { tools: [{ functionDeclarations: opts.tools }] }
+      : {}),
   });
 
-  const chat = model.startChat({
-    history: opts.history.map((t) => ({
-      role: t.role,
-      parts: [{ text: t.text }],
-    })),
-  });
+  const history: Content[] = opts.history.map((t) => ({
+    role: t.role,
+    parts: [{ text: t.text }],
+  }));
 
-  const start = Date.now();
-  const result = await chat.sendMessage(opts.userMessage);
-  const text = result.response.text();
-  const ms = Date.now() - start;
+  const chat = model.startChat({ history });
 
-  logger.info(
-    { ms, inputChars: opts.userMessage.length, outputChars: text.length },
-    '[Gemini] DANI reply generated',
-  );
+  const toolCalls: ToolCallRecord[] = [];
+  let iterations = 0;
 
-  return text;
+  // Primeira mensagem do user
+  let result = await chat.sendMessage(opts.userMessage);
+
+  while (iterations < MAX_TOOL_ITERATIONS) {
+    const calls = result.response.functionCalls();
+
+    // Sem function calls -> resposta final
+    if (!calls || calls.length === 0) {
+      const text = result.response.text();
+      logger.info(
+        {
+          iterations: iterations + 1,
+          toolCallsTotal: toolCalls.length,
+          outputChars: text.length,
+        },
+        '[Gemini] DANI reply ready',
+      );
+      return { text, toolCalls, iterations: iterations + 1 };
+    }
+
+    if (!opts.toolHandler) {
+      logger.warn(
+        { calls: calls.map((c) => c.name) },
+        '[Gemini] tools requested but no handler provided',
+      );
+      // Retorna o texto (mesmo que vazio) pra evitar loop infinito
+      return { text: result.response.text() ?? '', toolCalls, iterations: iterations + 1 };
+    }
+
+    // Executa todas as tools em paralelo
+    const toolResponses = await Promise.all(
+      calls.map(async (call) => {
+        const args = (call.args ?? {}) as Record<string, unknown>;
+        const startTool = Date.now();
+        try {
+          const toolResult = await opts.toolHandler!(call.name, args);
+          const preview = JSON.stringify(toolResult).slice(0, 200);
+          toolCalls.push({ name: call.name, args, resultPreview: preview });
+          logger.info(
+            { tool: call.name, args, ms: Date.now() - startTool },
+            '[Gemini] tool executed',
+          );
+          return {
+            functionResponse: {
+              name: call.name,
+              response: toolResult as object,
+            },
+          };
+        } catch (err) {
+          const errorMsg = (err as Error).message;
+          logger.error({ tool: call.name, err: errorMsg }, '[Gemini] tool failed');
+          toolCalls.push({
+            name: call.name,
+            args,
+            resultPreview: `ERROR: ${errorMsg.slice(0, 150)}`,
+          });
+          return {
+            functionResponse: {
+              name: call.name,
+              response: { status: 'ERROR', error: errorMsg },
+            },
+          };
+        }
+      }),
+    );
+
+    // Envia resultados pro Gemini
+    result = await chat.sendMessage(toolResponses);
+    iterations++;
+  }
+
+  logger.warn({ iterations, toolCalls: toolCalls.length }, '[Gemini] hit max tool iterations');
+  return {
+    text: result.response.text() ?? '',
+    toolCalls,
+    iterations,
+  };
 }

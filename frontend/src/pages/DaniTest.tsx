@@ -7,10 +7,21 @@ interface MeResponse {
   accounts: Array<{ accountId: string; role: string; accountName: string }>;
 }
 
+interface ToolCallInfo {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 interface ChatTurn {
   role: 'user' | 'model';
   text: string;
-  meta?: { modelMode: string; durationMs: number; fillerStripped: boolean };
+  meta?: {
+    modelMode: string;
+    durationMs: number;
+    fillerStripped: boolean;
+    iterations?: number;
+    toolCalls?: ToolCallInfo[];
+  };
 }
 
 interface MessagesResponse {
@@ -85,7 +96,13 @@ export default function DaniTestPage() {
       const res = await api.post<{
         reply: string;
         conversationId: string;
-        meta: { modelMode: string; durationMs: number; fillerStripped: boolean };
+        meta: {
+          modelMode: string;
+          durationMs: number;
+          fillerStripped: boolean;
+          iterations: number;
+          toolCalls: ToolCallInfo[];
+        };
       }>('/dani/chat', {
         accountId,
         message: userText,
@@ -181,9 +198,19 @@ export default function DaniTestPage() {
               >
                 {t.text}
                 {t.meta && (
-                  <div className="mt-1.5 pt-1.5 border-t border-white/10 text-[10px] opacity-60">
-                    {t.meta.modelMode} · {t.meta.durationMs}ms
-                    {t.meta.fillerStripped ? ' · filler stripped' : ''}
+                  <div className="mt-1.5 pt-1.5 border-t border-white/10 text-[10px] opacity-60 space-y-0.5">
+                    <div>
+                      {t.meta.modelMode} · {t.meta.durationMs}ms
+                      {t.meta.iterations && t.meta.iterations > 1 ? ` · ${t.meta.iterations} loops` : ''}
+                      {t.meta.fillerStripped ? ' · filler stripped' : ''}
+                    </div>
+                    {t.meta.toolCalls && t.meta.toolCalls.length > 0 && (
+                      <div className="font-mono">
+                        🔧 {t.meta.toolCalls
+                          .map((tc) => `${tc.name}(${JSON.stringify(tc.args)})`)
+                          .join(', ')}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

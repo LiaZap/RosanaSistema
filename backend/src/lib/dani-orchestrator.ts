@@ -2,14 +2,16 @@ import { db } from '../db/client.js';
 import { ninaSettings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { buildDaniSystemPrompt } from './dani-prompt.js';
-import { generateDaniReply, type ChatTurn } from './gemini-client.js';
+import {
+  generateDaniReply,
+  type ChatTurn,
+  type ToolCallRecord,
+} from './gemini-client.js';
+import { DANI_TOOLS, TOOL_HANDLERS } from './dani-tools.js';
 import { logger } from './logger.js';
 
 /**
- * Sanitiza a resposta da DANI removendo filler placeholders que o modelo
- * costuma gerar mesmo sob instrucao explicita.
- *
- * Fase 2A: regras basicas. Fase 2B vai adicionar paranoid mode + trigger SQL.
+ * Strip filler placeholders que o modelo costuma gerar.
  */
 const FILLER_PATTERNS: RegExp[] = [
   /^entendi[!.,\s]*(como posso ajudar)?[!?.]*\s*/i,
@@ -43,14 +45,12 @@ export interface DaniResult {
   modelUsed: string;
   durationMs: number;
   fillerStripped: boolean;
+  toolCalls: ToolCallRecord[];
+  iterations: number;
 }
 
 /**
- * Core do processamento da DANI.
- *
- * Phase 2A: stateless - recebe historico inline, devolve resposta.
- * Phase 2B: vai puxar historico do banco e suportar tool calls.
- * Phase 2C: vai enfileirar via BullMQ pro worker processar.
+ * Core do processamento da DANI com tools.
  */
 export async function processDaniMessage(
   message: string,
@@ -58,13 +58,13 @@ export async function processDaniMessage(
 ): Promise<DaniResult> {
   const start = Date.now();
 
-  // Carrega settings da conta (override de prompt, modelo, sdrName)
+  // Carrega settings da conta
   const settings = await db.query.ninaSettings.findFirst({
     where: eq(ninaSettings.accountId, ctx.accountId),
   });
 
   if (settings && !settings.isActive) {
-    logger.info({ accountId: ctx.accountId }, '[DANI] settings.isActive=false - DANI desativada');
+    logger.info({ accountId: ctx.accountId }, '[DANI] settings.isActive=false - desativada');
     throw new Error('DANI is disabled for this account');
   }
 
@@ -76,25 +76,32 @@ export async function processDaniMessage(
 
   const modelMode = settings?.aiModelMode ?? 'flash';
 
-  // Chama Gemini
-  const rawReply = await generateDaniReply({
+  // Tool handler vinculado ao accountId
+  const toolHandler = async (name: string, args: Record<string, unknown>) => {
+    const handler = TOOL_HANDLERS[name];
+    if (!handler) throw new Error(`Unknown tool: ${name}`);
+    return handler(args, { accountId: ctx.accountId });
+  };
+
+  const generation = await generateDaniReply({
     systemPrompt,
     history: ctx.history ?? [],
     userMessage: message,
     modelMode,
+    tools: DANI_TOOLS,
+    toolHandler,
   });
 
-  // Strip filler
-  const { clean, stripped } = stripFillerPrefix(rawReply);
+  const { clean, stripped } = stripFillerPrefix(generation.text);
 
   if (stripped) {
     logger.info(
-      { rawLength: rawReply.length, cleanLength: clean.length },
-      '[DANI] filler stripped from reply',
+      { rawLength: generation.text.length, cleanLength: clean.length },
+      '[DANI] filler stripped',
     );
   }
 
-  // Se sobrou nada util, retorna fallback minimo (anti tela em branco)
+  // Fallback se sobrou nada util
   const finalReply = clean.length >= 5
     ? clean
     : 'Pode me contar mais sobre o que voce esta procurando?';
@@ -104,5 +111,7 @@ export async function processDaniMessage(
     modelUsed: modelMode,
     durationMs: Date.now() - start,
     fillerStripped: stripped,
+    toolCalls: generation.toolCalls,
+    iterations: generation.iterations,
   };
 }
