@@ -86,6 +86,13 @@ export default function DashboardPage() {
             >
               Testar DANI
             </Link>
+            <Link
+              to="/bling"
+              className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
+                         hover:bg-card transition-colors"
+            >
+              Bling
+            </Link>
             <button
               onClick={handleLogout}
               className="px-4 py-2 rounded-lg border border-border text-sm text-muted-foreground
