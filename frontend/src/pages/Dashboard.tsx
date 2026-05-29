@@ -19,24 +19,34 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
+  const [meError, setMeError] = useState<string | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
-      try {
-        const [meData, healthData] = await Promise.all([
-          api.get<MeResponse>('/auth/me'),
-          api.get<HealthResponse>('/health'),
-        ]);
-        setMe(meData);
-        setHealth(healthData);
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
+      const [meRes, healthRes] = await Promise.allSettled([
+        api.get<MeResponse>('/auth/me'),
+        api.get<HealthResponse>('/health'),
+      ]);
+
+      if (meRes.status === 'fulfilled') {
+        setMe(meRes.value);
+      } else {
+        if (meRes.reason instanceof ApiError && meRes.reason.status === 401) {
           navigate('/auth');
+          return;
         }
-      } finally {
-        setLoading(false);
+        setMeError(meRes.reason?.message || 'Falha ao carregar /auth/me');
       }
+
+      if (healthRes.status === 'fulfilled') {
+        setHealth(healthRes.value);
+      } else {
+        setHealthError(healthRes.reason?.message || 'Falha ao carregar /health');
+      }
+
+      setLoading(false);
     }
     load();
   }, [navigate]);
@@ -133,6 +143,27 @@ export default function DashboardPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Errors (debug) */}
+        {(meError || healthError) && (
+          <div className="rounded-xl border border-fce-red/40 bg-fce-red/10 p-5 space-y-2">
+            <h3 className="font-semibold text-fce-red">Falha de comunicação com o backend</h3>
+            {meError && (
+              <p className="text-sm text-fce-red/90">
+                <span className="font-mono">/auth/me</span>: {meError}
+              </p>
+            )}
+            {healthError && (
+              <p className="text-sm text-fce-red/90">
+                <span className="font-mono">/health</span>: {healthError}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground pt-2 border-t border-fce-red/20">
+              Veja a aba Network do navegador. Provável: nginx (frontend) não consegue
+              alcançar o backend, ou env vars do fce-api estão erradas.
+            </p>
           </div>
         )}
 
