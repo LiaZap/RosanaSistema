@@ -80,9 +80,16 @@ export default function DashboardPage() {
           </div>
           <div className="flex gap-2">
             <Link
-              to="/dani"
+              to="/conversations"
               className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold
                          hover:opacity-90 transition-opacity"
+            >
+              Conversas
+            </Link>
+            <Link
+              to="/dani"
+              className="px-4 py-2 rounded-lg border border-border text-sm text-foreground
+                         hover:bg-card transition-colors"
             >
               Testar DANI
             </Link>

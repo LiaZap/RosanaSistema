@@ -4,6 +4,8 @@ import DashboardPage from './pages/Dashboard';
 import DaniTestPage from './pages/DaniTest';
 import BlingPage from './pages/Bling';
 import WhatsAppPage from './pages/WhatsApp';
+import ConversationsPage from './pages/Conversations';
+import ConversationDetailPage from './pages/ConversationDetail';
 
 export default function App() {
   return (
@@ -14,6 +16,8 @@ export default function App() {
         <Route path="/dani" element={<DaniTestPage />} />
         <Route path="/bling" element={<BlingPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
+        <Route path="/conversations" element={<ConversationsPage />} />
+        <Route path="/conversations/:id" element={<ConversationDetailPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
