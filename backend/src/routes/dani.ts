@@ -1,11 +1,23 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { requireAuth, getUser } from '../middleware/auth.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../lib/errors.js';
 import { db } from '../db/client.js';
-import { accountMembers, ninaSettings } from '../db/schema.js';
+import {
+  accountMembers,
+  conversations,
+  messages,
+  ninaSettings,
+} from '../db/schema.js';
 import { processDaniMessage } from '../lib/dani-orchestrator.js';
+import {
+  createConversation,
+  getOrCreateActiveConversation,
+  getOrCreateTestContact,
+  loadHistory,
+  saveMessage,
+} from '../lib/dani-conversations.js';
 import { logger } from '../lib/logger.js';
 
 const dani = new Hono();
@@ -13,15 +25,7 @@ const dani = new Hono();
 const chatSchema = z.object({
   message: z.string().min(1, 'message required').max(4000),
   accountId: z.string().uuid('valid accountId required'),
-  history: z
-    .array(
-      z.object({
-        role: z.enum(['user', 'model']),
-        text: z.string().min(1).max(8000),
-      }),
-    )
-    .max(40)
-    .optional(),
+  conversationId: z.string().uuid().optional(),
 });
 
 const settingsUpdateSchema = z.object({
@@ -45,9 +49,19 @@ async function assertAccountMember(userId: string, accountId: string): Promise<v
   if (member.status !== 'active') throw new ForbiddenError('Membership is not active');
 }
 
+/** Confirma que uma conversation pertence a uma account */
+async function assertConversationInAccount(conversationId: string, accountId: string): Promise<void> {
+  const [conv] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.id, conversationId), eq(conversations.accountId, accountId)))
+    .limit(1);
+  if (!conv) throw new NotFoundError('Conversation not found in this account');
+}
+
 // ── POST /dani/chat ──────────────────────────────────
-// Endpoint de teste: envia mensagem direto pra DANI, retorna resposta.
-// Sem WhatsApp, sem fila, sem persistencia ainda (Phase 2A).
+// Envia mensagem pra DANI. Persiste user + nina messages no banco.
+// Se conversationId nao for passado, usa/cria a conversa ativa pro user.
 dani.post('/chat', requireAuth, async (c) => {
   const user = getUser(c);
   const body = await c.req.json();
@@ -56,23 +70,116 @@ dani.post('/chat', requireAuth, async (c) => {
     throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
   }
 
-  const { message, accountId, history } = parsed.data;
+  const { message, accountId } = parsed.data;
+  let { conversationId } = parsed.data;
   await assertAccountMember(user.id, accountId);
 
+  // Garante conversation ativa
+  if (!conversationId) {
+    const contact = await getOrCreateTestContact({
+      accountId,
+      userId: user.id,
+      userEmail: user.email,
+    });
+    const conv = await getOrCreateActiveConversation({ accountId, contactId: contact.id });
+    conversationId = conv.id;
+  } else {
+    await assertConversationInAccount(conversationId, accountId);
+  }
+
+  // Carrega historico ANTES de salvar a nova mensagem
+  const history = await loadHistory(conversationId, 30);
+
   logger.info(
-    { userId: user.id, accountId, messageLength: message.length, historyTurns: history?.length ?? 0 },
+    {
+      userId: user.id,
+      accountId,
+      conversationId,
+      messageLength: message.length,
+      historyTurns: history.length,
+    },
     '[DANI] /chat request',
   );
 
+  // Salva mensagem do user
+  await saveMessage({
+    conversationId,
+    accountId,
+    fromType: 'user',
+    content: message,
+  });
+
+  // Processa via Gemini
   const result = await processDaniMessage(message, { accountId, history });
+
+  // Salva resposta da DANI
+  await saveMessage({
+    conversationId,
+    accountId,
+    fromType: 'nina',
+    content: result.reply,
+    processedByNina: true,
+  });
 
   return c.json({
     reply: result.reply,
+    conversationId,
     meta: {
       modelMode: result.modelUsed,
       durationMs: result.durationMs,
       fillerStripped: result.fillerStripped,
+      historyTurns: history.length,
     },
+  });
+});
+
+// ── POST /dani/conversations ────────────────────────
+// Cria uma nova conversa (descarta a anterior se houver)
+dani.post('/conversations', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const accountId = z.string().uuid().parse(body.accountId);
+  await assertAccountMember(user.id, accountId);
+
+  const contact = await getOrCreateTestContact({
+    accountId,
+    userId: user.id,
+    userEmail: user.email,
+  });
+  const conv = await createConversation({ accountId, contactId: contact.id });
+
+  return c.json({ conversationId: conv.id });
+});
+
+// ── GET /dani/conversations/:id/messages ────────────
+dani.get('/conversations/:id/messages', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId query param required');
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  await assertConversationInAccount(conversationId, accountId);
+
+  const rows = await db
+    .select({
+      id: messages.id,
+      fromType: messages.fromType,
+      content: messages.content,
+      createdAt: messages.createdAt,
+    })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(desc(messages.createdAt))
+    .limit(100);
+
+  return c.json({
+    messages: rows.reverse().map((m) => ({
+      id: m.id,
+      role: m.fromType === 'user' ? 'user' : 'model',
+      text: m.content,
+      createdAt: m.createdAt,
+    })),
   });
 });
 
@@ -102,7 +209,6 @@ dani.put('/settings', requireAuth, async (c) => {
   const { accountId, ...updates } = parsed.data;
   await assertAccountMember(user.id, accountId);
 
-  // Upsert
   const existing = await db.query.ninaSettings.findFirst({
     where: eq(ninaSettings.accountId, accountId),
   });
@@ -116,13 +222,7 @@ dani.put('/settings', requireAuth, async (c) => {
     return c.json({ settings: updated });
   }
 
-  const [created] = await db
-    .insert(ninaSettings)
-    .values({
-      accountId,
-      ...updates,
-    })
-    .returning();
+  const [created] = await db.insert(ninaSettings).values({ accountId, ...updates }).returning();
   return c.json({ settings: created });
 });
 

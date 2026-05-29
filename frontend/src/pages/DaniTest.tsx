@@ -13,16 +13,27 @@ interface ChatTurn {
   meta?: { modelMode: string; durationMs: number; fillerStripped: boolean };
 }
 
+interface MessagesResponse {
+  messages: Array<{ id: string; role: 'user' | 'model'; text: string; createdAt: string }>;
+}
+
+const CONV_STORAGE_KEY = 'fce_dani_conversation_id';
+
 export default function DaniTestPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [accountId, setAccountId] = useState<string>('');
+  const [conversationId, setConversationId] = useState<string | null>(
+    () => localStorage.getItem(CONV_STORAGE_KEY),
+  );
   const [input, setInput] = useState('');
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [sending, setSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
+  // Carrega user
   useEffect(() => {
     api
       .get<MeResponse>('/auth/me')
@@ -35,6 +46,26 @@ export default function DaniTestPage() {
       });
   }, [navigate]);
 
+  // Carrega histórico da conversa salva no localStorage
+  useEffect(() => {
+    if (!accountId || !conversationId) return;
+    setLoadingHistory(true);
+    api
+      .get<MessagesResponse>(`/dani/conversations/${conversationId}/messages?accountId=${accountId}`)
+      .then((data) => {
+        setTurns(data.messages.map((m) => ({ role: m.role, text: m.text })));
+      })
+      .catch((e) => {
+        if (e instanceof ApiError && (e.status === 404 || e.status === 401)) {
+          // Conversa nao existe mais (ou nao tem permissao) - limpa
+          localStorage.removeItem(CONV_STORAGE_KEY);
+          setConversationId(null);
+        }
+      })
+      .finally(() => setLoadingHistory(false));
+  }, [accountId, conversationId]);
+
+  // Auto-scroll
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [turns]);
@@ -51,26 +82,43 @@ export default function DaniTestPage() {
     setSending(true);
 
     try {
-      const history = turns.map((t) => ({ role: t.role, text: t.text }));
       const res = await api.post<{
         reply: string;
+        conversationId: string;
         meta: { modelMode: string; durationMs: number; fillerStripped: boolean };
-      }>('/dani/chat', { accountId, message: userText, history });
+      }>('/dani/chat', {
+        accountId,
+        message: userText,
+        conversationId: conversationId ?? undefined,
+      });
+
+      // Persiste conversationId retornado
+      if (res.conversationId !== conversationId) {
+        localStorage.setItem(CONV_STORAGE_KEY, res.conversationId);
+        setConversationId(res.conversationId);
+      }
 
       setTurns([...newTurns, { role: 'model', text: res.reply, meta: res.meta }]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Erro desconhecido';
       setError(msg);
-      // Remove a mensagem do user pra deixar tentar de novo
-      setTurns(turns);
+      setTurns(turns); // rollback
     } finally {
       setSending(false);
     }
   }
 
-  function handleReset() {
-    setTurns([]);
-    setError(null);
+  async function handleNewConversation() {
+    if (!accountId) return;
+    try {
+      const res = await api.post<{ conversationId: string }>('/dani/conversations', { accountId });
+      localStorage.setItem(CONV_STORAGE_KEY, res.conversationId);
+      setConversationId(res.conversationId);
+      setTurns([]);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Falha ao criar conversa');
+    }
   }
 
   return (
@@ -84,18 +132,18 @@ export default function DaniTestPage() {
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">DANI - Teste</h1>
-              <p className="text-sm text-muted-foreground">
-                {me?.accounts[0]?.accountName ?? 'Conta'}
+              <p className="text-xs text-muted-foreground font-mono">
+                {conversationId ? `conv ${conversationId.slice(0, 8)}...` : 'sem conversa'}
               </p>
             </div>
           </div>
           <div className="flex gap-2">
             <button
-              onClick={handleReset}
+              onClick={handleNewConversation}
               className="px-3 py-2 rounded-lg border border-border text-sm
                          text-muted-foreground hover:bg-card transition-colors"
             >
-              Limpar
+              Nova conversa
             </button>
             <Link
               to="/dashboard"
@@ -109,7 +157,12 @@ export default function DaniTestPage() {
 
         {/* Chat */}
         <div className="glass rounded-xl p-5 min-h-[400px] max-h-[60vh] overflow-y-auto space-y-3">
-          {turns.length === 0 && (
+          {loadingHistory && (
+            <p className="text-muted-foreground text-sm text-center py-12">
+              Carregando histórico...
+            </p>
+          )}
+          {!loadingHistory && turns.length === 0 && (
             <p className="text-muted-foreground text-sm text-center py-12">
               Mande uma mensagem pra DANI testar o orchestrator
             </p>
