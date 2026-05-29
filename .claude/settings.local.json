@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "PowerShell(Start-Process \"C:\\\\Program Files\\\\Docker\\\\Docker\\\\Docker Desktop.exe\" -ErrorAction SilentlyContinue)",
+      "PowerShell(\"Docker Desktop starting...\")",
+      "PowerShell($maxWait = 120; $elapsed = 0; while \\($elapsed -lt $maxWait\\) { try { $ver = docker version --format '{{.Server.Version}}' 2>$null; if \\($ver\\) { \"Docker ready: $ver\"; break } } catch {}; Start-Sleep -Seconds 5; $elapsed += 5; \"Waiting... ${elapsed}s\" }; if \\($elapsed -ge $maxWait\\) { \"Timeout waiting for Docker\" })",
+      "Bash(npx tsc *)",
+      "PowerShell(Set-Location \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\\\\worker\"; $proc = Start-Process -FilePath \"npx\" -ArgumentList \"tsx\",\"src/index.ts\" -NoNewWindow -PassThru -RedirectStandardOutput \"$env:TEMP\\\\worker-out.txt\" -RedirectStandardError \"$env:TEMP\\\\worker-err.txt\"; Start-Sleep -Seconds 5; Get-Content \"$env:TEMP\\\\worker-out.txt\" -ErrorAction SilentlyContinue; Write-Output \"---STDERR---\"; Get-Content \"$env:TEMP\\\\worker-err.txt\" -ErrorAction SilentlyContinue; Write-Output \"---PID: $\\($proc.Id\\)---\")",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "Bash(dir /s /b \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\\\\worker\\\\src\\\\*.ts\")",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\" -Force | Where-Object { -not $_.PSIsContainer -or $_.Name -in @\\(\"backend\",\"worker\",\"frontend\",\"postgres\",\"scripts\",\"docs\"\\) } | Select-Object Name, PSIsContainer | Format-Table -AutoSize)",
+      "Bash(git -C \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\" remote -v)",
+      "Bash(git -C \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\" branch --show-current)",
+      "Bash(git -C \"C:\\\\Users\\\\Paulo\\\\Documents\\\\ProjetoRosana\" status --short)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git rm *)"
+    ]
+  }
+}

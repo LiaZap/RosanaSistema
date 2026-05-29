@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 340 30% 5%;
+    --foreground: 0 0% 98%;
+    --card: 340 25% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 340 25% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 325 94% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 340 20% 14%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 340 15% 16%;
+    --muted-foreground: 215 16% 57%;
+    --accent: 74 67% 47%;
+    --accent-foreground: 0 0% 8%;
+    --destructive: 6 90% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 25% 20%;
+    --input: 215 25% 20%;
+    --ring: 325 94% 46%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground;
+  }
+}
+
+@layer utilities {
+  .gradient-pink {
+    background: linear-gradient(135deg, #e50789, #8f1b3f);
+  }
+  .gradient-pink-hover {
+    background: linear-gradient(135deg, #f008a0, #a52050);
+  }
+  .glass {
+    @apply bg-card/50 backdrop-blur-lg border border-border/50;
+  }
+}
