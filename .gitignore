@@ -7,7 +7,6 @@ dist/
 .DS_Store
 Thumbs.db
 .vite/
-drizzle/meta/
 postgres-data/
 redis-data/
 minio-data/
