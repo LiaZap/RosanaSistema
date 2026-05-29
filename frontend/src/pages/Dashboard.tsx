@@ -25,6 +25,15 @@ interface DashboardKpis {
   produtosTotal: number;
 }
 
+interface CronJob {
+  id: string;
+  name: string;
+  description: string;
+  cron: string;
+  humanReadable: string;
+  enabled: boolean;
+}
+
 function fmtBRL(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n);
 }
@@ -45,6 +54,7 @@ export default function DashboardPage() {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
+  const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [meError, setMeError] = useState<string | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +76,12 @@ export default function DashboardPage() {
             setKpis(data);
           } catch {
             // KPIs falham silenciosamente - sistema ainda funciona sem
+          }
+          try {
+            const sched = await api.get<{ jobs: CronJob[] }>('/cron/schedule');
+            setCronJobs(sched.jobs);
+          } catch {
+            // ignore
           }
         }
       } else {
@@ -208,6 +224,32 @@ export default function DashboardPage() {
               </div>
             </div>
           </>
+        )}
+
+        {/* Cron jobs */}
+        {cronJobs.length > 0 && (
+          <div className="glass rounded-xl p-5 space-y-2">
+            <h2 className="font-semibold text-foreground text-sm">Tarefas automaticas</h2>
+            <div className="space-y-1.5">
+              {cronJobs.map((j) => (
+                <div
+                  key={j.id}
+                  className="flex items-center gap-3 text-sm"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      j.enabled ? 'bg-fce-green' : 'bg-muted-foreground'
+                    }`}
+                  />
+                  <span className="font-medium text-foreground">{j.name}</span>
+                  <span className="text-xs text-muted-foreground">{j.humanReadable}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground ml-auto">
+                    {j.cron}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Health Card */}

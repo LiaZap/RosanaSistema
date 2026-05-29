@@ -295,6 +295,10 @@ export default function CloudinaryPage() {
               Faz upload em batch (ate 200 por vez) dos produtos com imagem Bling sem imagem Cloudinary.
               Para a DANI poder mandar foto via WhatsApp.
             </p>
+            <p className="text-xs text-fce-green flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-fce-green"></span>
+              Auto-upload ativo: a cada 1h, lotes de 50
+            </p>
             <button
               onClick={handleUpload}
               disabled={uploading || (status.productCount.pending ?? 0) === 0}

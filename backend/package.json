@@ -25,6 +25,7 @@
     "hono": "^4.6.3",
     "ioredis": "^5.4.1",
     "lucia": "^3.2.2",
+    "node-cron": "^3.0.3",
     "pg": "^8.13.0",
     "pino": "^9.4.0",
     "socket.io": "^4.8.0",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.7.5",
+    "@types/node-cron": "^3.0.11",
     "@types/pg": "^8.11.10",
     "drizzle-kit": "^0.26.2",
     "tsx": "^4.19.1",

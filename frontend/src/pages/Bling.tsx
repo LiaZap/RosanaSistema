@@ -289,6 +289,10 @@ export default function BlingPage() {
           <p className="text-sm text-muted-foreground">
             Importa ate 5000 produtos do Bling pro banco local. Pode demorar 30s-2min.
           </p>
+          <p className="text-xs text-fce-green flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-fce-green"></span>
+            Sync automatico ativo: a cada 5h (horario de Sao Paulo)
+          </p>
           <button
             onClick={handleSync}
             disabled={!status?.connected || syncing}

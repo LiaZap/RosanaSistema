@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server';
 import { rawQuery, closePool } from './db/client.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/error.js';
+import { startCronJobs } from './lib/cron-scheduler.js';
 import authRoutes from './routes/auth.js';
 import healthRoutes from './routes/health.js';
 import daniRoutes from './routes/dani.js';
@@ -13,6 +14,7 @@ import crmRoutes from './routes/crm.js';
 import cloudinaryRoutes from './routes/cloudinary.js';
 import pipelineRoutes from './routes/pipeline.js';
 import appointmentRoutes from './routes/appointments.js';
+import cronRoutes from './routes/cron.js';
 
 const app = new Hono();
 
@@ -38,6 +40,7 @@ app.route('/crm', crmRoutes);
 app.route('/cloudinary', cloudinaryRoutes);
 app.route('/pipeline', pipelineRoutes);
 app.route('/appointments', appointmentRoutes);
+app.route('/cron', cronRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────
@@ -55,8 +58,15 @@ async function main() {
 
   const server = serve({ fetch: app.fetch, port }, () => {
     logger.info(`[API] FCE Backend v0.1.0 on http://localhost:${port}`);
-    logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/* /pipeline/* /appointments/*');
+    logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/* /pipeline/* /appointments/* /cron/*');
   });
+
+  // Start cron jobs (Bling sync 5h + Cloudinary upload 1h)
+  if (process.env.DISABLE_CRON !== 'true') {
+    startCronJobs();
+  } else {
+    logger.info('[API] Cron jobs disabled via DISABLE_CRON env');
+  }
 
   // ── Graceful shutdown ──
 
