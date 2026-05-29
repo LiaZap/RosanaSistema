@@ -17,10 +17,19 @@ export function errorHandler(err: Error, c: Context) {
     );
   }
 
-  logger.error({ err }, 'Unhandled error');
+  logger.error({ err, stack: err.stack }, 'Unhandled error');
+
+  // Retorna a mensagem real do erro (interno, nao publico-internet).
+  // Util pra debug do frontend sem precisar ver os logs do servidor.
+  const realMessage = err.message || 'Internal server error';
+  const errorName = err.name && err.name !== 'Error' ? `${err.name}: ` : '';
 
   return c.json(
-    { error: 'Internal server error', code: 'INTERNAL_ERROR', statusCode: 500 },
+    {
+      error: `${errorName}${realMessage}`.slice(0, 500),
+      code: 'INTERNAL_ERROR',
+      statusCode: 500,
+    },
     500 as ContentfulStatusCode,
   );
 }
