@@ -6,6 +6,8 @@ const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 const connection = {
   host: process.env.REDIS_HOST || 'localhost',
   port: Number(process.env.REDIS_PORT) || 6379,
+  password: process.env.REDIS_PASSWORD || undefined,
+  username: process.env.REDIS_USERNAME || undefined,
   maxRetriesPerRequest: null,
 };
 
