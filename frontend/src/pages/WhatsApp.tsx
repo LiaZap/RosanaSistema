@@ -40,6 +40,51 @@ export default function WhatsAppPage() {
   const [sendText, setSendText] = useState('');
   const [sending, setSending] = useState(false);
 
+  // Lista de instancias existentes no Evolution
+  interface EvoInstance {
+    name: string;
+    state: string;
+    number: string | null;
+    profileName: string | null;
+    profilePicUrl: string | null;
+  }
+  const [instances, setInstances] = useState<EvoInstance[] | null>(null);
+  const [loadingInstances, setLoadingInstances] = useState(false);
+  const [selecting, setSelecting] = useState<string | null>(null);
+
+  async function loadInstances() {
+    if (!accountId) return;
+    setLoadingInstances(true);
+    setError(null);
+    try {
+      const data = await api.get<{ instances: EvoInstance[] }>(
+        `/whatsapp/instances?accountId=${accountId}`,
+      );
+      setInstances(data.instances);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Falha ao listar instancias');
+    } finally {
+      setLoadingInstances(false);
+    }
+  }
+
+  async function handleSelectInstance(name: string) {
+    if (!accountId) return;
+    if (!confirm(`Selecionar a instancia "${name}"? Ela sera vinculada a essa conta.`)) return;
+    setSelecting(name);
+    setError(null);
+    try {
+      await api.post('/whatsapp/instance/select', { accountId, instanceName: name });
+      setNotice(`Instancia "${name}" selecionada e webhook configurado.`);
+      await loadSettings();
+      setInstances(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Falha ao selecionar instancia');
+    } finally {
+      setSelecting(null);
+    }
+  }
+
   useEffect(() => {
     api
       .get<MeResponse>('/auth/me')
@@ -280,7 +325,7 @@ export default function WhatsAppPage() {
           <p className="text-sm text-muted-foreground">
             Cria instancia no Evolution + escaneia QR code com WhatsApp Web.
           </p>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={handleCreateInstance}
               disabled={!settings?.configured || creating}
@@ -288,6 +333,16 @@ export default function WhatsAppPage() {
                          disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {creating ? 'Criando...' : settings?.session ? 'Reconectar' : 'Criar instancia'}
+            </button>
+            <button
+              onClick={loadInstances}
+              disabled={!settings?.configured || loadingInstances}
+              className="px-4 py-3 rounded-lg border border-border text-sm
+                         text-foreground hover:bg-card transition-colors
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Listar instancias ja criadas no Evolution"
+            >
+              {loadingInstances ? 'Buscando...' : 'Usar instancia existente'}
             </button>
             {settings?.session && settings.session.status !== 'connected' && (
               <button
@@ -308,6 +363,89 @@ export default function WhatsAppPage() {
               </button>
             )}
           </div>
+
+          {/* Lista de instancias existentes no Evolution */}
+          {instances !== null && (
+            <div className="pt-3 border-t border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Instancias no Evolution ({instances.length}):
+                </p>
+                <button
+                  onClick={() => setInstances(null)}
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                >
+                  fechar
+                </button>
+              </div>
+              {instances.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic">Nenhuma instancia encontrada.</p>
+              ) : (
+                <div className="space-y-2">
+                  {instances.map((inst) => {
+                    const isCurrent = settings?.session?.instanceName === inst.name;
+                    const stateColor =
+                      inst.state === 'open'
+                        ? 'text-fce-green'
+                        : inst.state === 'connecting'
+                          ? 'text-yellow-500'
+                          : 'text-muted-foreground';
+                    return (
+                      <div
+                        key={inst.name}
+                        className={`p-3 rounded-lg border ${
+                          isCurrent ? 'border-fce-pink/40 bg-fce-pink/5' : 'border-border bg-card'
+                        } flex items-center gap-3`}
+                      >
+                        {inst.profilePicUrl ? (
+                          <img
+                            src={inst.profilePicUrl}
+                            alt={inst.profileName ?? inst.name}
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xs">
+                            {inst.name.slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-foreground truncate">
+                              {inst.name}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-xs px-2 py-0.5 rounded bg-fce-pink/20 text-fce-pink">
+                                em uso
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {inst.profileName ?? '—'}
+                            {inst.number && ` · +${inst.number}`}
+                            {' · '}
+                            <span className={stateColor}>{inst.state}</span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleSelectInstance(inst.name)}
+                          disabled={isCurrent || selecting !== null}
+                          className="px-3 py-1.5 rounded-lg text-xs gradient-pink text-white
+                                     disabled:opacity-40 disabled:cursor-not-allowed
+                                     disabled:bg-muted disabled:text-muted-foreground"
+                        >
+                          {selecting === inst.name
+                            ? 'Selecionando...'
+                            : isCurrent
+                              ? 'Atual'
+                              : 'Usar esta'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {settings?.session?.qrCode && settings.session.status !== 'connected' && (
             <div className="pt-3 border-t border-border">

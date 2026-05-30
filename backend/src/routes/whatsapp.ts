@@ -18,6 +18,7 @@ import {
 import {
   connectInstance,
   createInstance,
+  fetchInstances,
   getConnectionState,
   getEvolutionSettings,
   logoutInstance,
@@ -148,6 +149,76 @@ whatsapp.put('/settings', requireAuth, async (c) => {
   }
 
   return c.json({ ok: true });
+});
+
+// ── GET /whatsapp/instances ──────────────────────────
+// Lista TODAS as instancias ja criadas no Evolution
+whatsapp.get('/instances', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const settings = await getEvolutionSettings(accountId);
+  try {
+    const instances = await fetchInstances({ settings });
+    return c.json({ instances });
+  } catch (err) {
+    logger.warn({ err: (err as Error).message }, '[WhatsApp] fetchInstances failed');
+    throw new AppError((err as Error).message, 502);
+  }
+});
+
+// ── POST /whatsapp/instance/select ───────────────────
+// Seleciona uma instancia EXISTENTE (nao cria). Vincula ao account
+// e configura webhook na instancia escolhida.
+whatsapp.post('/instance/select', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const schema = z.object({
+    accountId: z.string().uuid(),
+    instanceName: z.string().min(2).max(80),
+  });
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
+  }
+  const { accountId, instanceName } = parsed.data;
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const settings = await getEvolutionSettings(accountId);
+  const settingsRow = await db.query.whatsappAccountSettings.findFirst({
+    where: eq(whatsappAccountSettings.accountId, accountId),
+  });
+
+  // Configura webhook na instancia escolhida pra FCE receber msgs
+  const webhookUrl = settingsRow?.verifyToken
+    ? buildWebhookUrl(accountId, settingsRow.verifyToken)
+    : undefined;
+  if (webhookUrl) {
+    try {
+      await setWebhook({ settings, instanceName, webhookUrl });
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, '[WhatsApp] setWebhook on select failed');
+    }
+  }
+
+  // Pega o estado atual da instancia
+  let state: string = 'unknown';
+  try {
+    const conn = await getConnectionState({ settings, instanceName });
+    state = conn.state;
+  } catch (err) {
+    logger.warn({ err: (err as Error).message }, '[WhatsApp] getConnectionState on select failed');
+  }
+
+  await upsertSessionStatus({
+    accountId,
+    instanceName,
+    status: state === 'open' ? 'connected' : 'connecting',
+  });
+
+  return c.json({ ok: true, instanceName, state, webhookUrl });
 });
 
 // ── POST /whatsapp/instance ──────────────────────────

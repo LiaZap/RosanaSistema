@@ -51,6 +51,78 @@ export interface EvolutionConnectionState {
   instance?: string;
 }
 
+/** Estrutura simplificada de instancia retornada pelo Evolution */
+export interface EvolutionInstanceInfo {
+  name: string;
+  state: string; // 'open' | 'connecting' | 'close' | etc
+  number?: string | null;
+  profileName?: string | null;
+  profilePicUrl?: string | null;
+}
+
+/**
+ * Lista TODAS as instancias do Evolution API.
+ * Endpoint: GET /instance/fetchInstances
+ * Suporta varios shapes diferentes (Baileys vs cloud, v1 vs v2).
+ */
+export async function fetchInstances(opts: {
+  settings: EvolutionSettings;
+}): Promise<EvolutionInstanceInfo[]> {
+  const res = await fetch(`${opts.settings.apiUrl}/instance/fetchInstances`, {
+    method: 'GET',
+    headers: headers(opts.settings.apiKey),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Evolution fetchInstances ${res.status}: ${text.slice(0, 200)}`);
+  }
+  const raw = (await res.json()) as unknown;
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as { instances?: unknown[] }).instances)
+      ? (raw as { instances: unknown[] }).instances
+      : [];
+
+  return list
+    .map((item): EvolutionInstanceInfo | null => {
+      const it = item as Record<string, unknown>;
+      // V2: { name, connectionStatus, ownerJid, profileName, profilePicUrl }
+      // V1: { instance: { instanceName, status, ... } }
+      const inner =
+        it.instance && typeof it.instance === 'object'
+          ? (it.instance as Record<string, unknown>)
+          : it;
+
+      const name =
+        (typeof inner.name === 'string' ? inner.name : null) ??
+        (typeof inner.instanceName === 'string' ? inner.instanceName : null);
+      if (!name) return null;
+
+      const state =
+        (typeof inner.connectionStatus === 'string' ? inner.connectionStatus : null) ??
+        (typeof inner.status === 'string' ? inner.status : null) ??
+        (typeof inner.state === 'string' ? inner.state : null) ??
+        'unknown';
+
+      const ownerJid =
+        (typeof inner.ownerJid === 'string' ? inner.ownerJid : null) ??
+        (typeof inner.owner === 'string' ? inner.owner : null) ??
+        null;
+      const number = ownerJid ? ownerJid.split('@')[0] : null;
+
+      return {
+        name,
+        state,
+        number,
+        profileName:
+          (typeof inner.profileName === 'string' ? inner.profileName : null) ?? null,
+        profilePicUrl:
+          (typeof inner.profilePicUrl === 'string' ? inner.profilePicUrl : null) ?? null,
+      };
+    })
+    .filter((x): x is EvolutionInstanceInfo => x !== null);
+}
+
 /** Cria uma instancia (se nao existir). Idempotente: retorna OK se ja existe */
 export async function createInstance(opts: {
   settings: EvolutionSettings;
