@@ -244,6 +244,103 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/upload-debug/:productId ───────────────
+// Debug: chama uploadImageFromUrl manualmente e mostra TUDO
+media.get('/upload-debug/:productId', async (c) => {
+  const productId = c.req.param('productId');
+  const out: Record<string, unknown> = { productId };
+  try {
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+    out.product = product
+      ? {
+          id: product.id,
+          blingId: product.blingId,
+          accountId: product.accountId,
+          imagemBling: product.imagemBling?.slice(0, 120),
+        }
+      : null;
+    if (!product?.blingId || !product.accountId) {
+      out.error = 'product missing';
+      return c.json(out, 404);
+    }
+
+    // Pega URL fresca
+    const { getValidAccessToken, fetchFreshProductImageUrl } = await import(
+      '../lib/bling-client.js'
+    );
+    const token = await getValidAccessToken(product.accountId);
+    out.hasToken = !!token;
+    if (!token) {
+      out.error = 'no token';
+      return c.json(out, 404);
+    }
+    const fresh = await fetchFreshProductImageUrl({
+      accessToken: token,
+      blingId: product.blingId,
+    });
+    out.freshUrl = fresh?.slice(0, 200);
+    if (!fresh) {
+      out.error = 'no fresh URL';
+      return c.json(out, 404);
+    }
+
+    // Tenta baixar do servidor
+    const dlRes = await fetch(fresh, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'image/*,*/*',
+      },
+      redirect: 'follow',
+    });
+    out.downloadStatus = dlRes.status;
+    out.downloadContentType = dlRes.headers.get('content-type');
+    out.downloadContentLength = dlRes.headers.get('content-length');
+
+    if (!dlRes.ok) {
+      const errBody = await dlRes.text();
+      out.downloadErrorBody = errBody.slice(0, 500);
+      return c.json(out);
+    }
+
+    const buffer = Buffer.from(await dlRes.arrayBuffer());
+    out.bufferBytes = buffer.length;
+
+    // Testa MinIO upload
+    try {
+      const { getS3, buildProductImageKey } = await import('../lib/minio-cache.js');
+      const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+      const mimetype = dlRes.headers.get('content-type') ?? 'image/jpeg';
+      const ext = mimetype.split('/')[1]?.split(';')[0] ?? 'jpg';
+      const key = buildProductImageKey(productId, ext === 'jpeg' ? 'jpg' : ext);
+      const bucket = process.env.MINIO_BUCKET || 'fce-media';
+      out.minioKey = key;
+      out.minioBucket = bucket;
+      await getS3().send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: buffer,
+          ContentType: mimetype,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
+      out.minioUploadOk = true;
+    } catch (err) {
+      out.minioUploadErr = (err as Error).message;
+      out.minioUploadStack = (err as Error).stack?.slice(0, 500);
+    }
+
+    return c.json(out);
+  } catch (err) {
+    out.error = (err as Error).message;
+    out.stack = (err as Error).stack?.slice(0, 500);
+    return c.json(out, 404);
+  }
+});
+
 // ── GET /media/bling-token-test ──────────────────────
 // Testa POST direto ao /oauth/token (espera 400/401, NAO 429)
 media.get('/bling-token-test', async (c) => {
