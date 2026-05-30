@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
+import { Avatar } from '../components/ui/avatar';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -54,11 +55,18 @@ const STATUS_LABELS: Record<Conversation['status'], string> = {
   closed: 'Fechado',
 };
 
-const STATUS_COLORS: Record<Conversation['status'], string> = {
-  nina: 'bg-fce-pink/20 text-fce-pink border-fce-pink/40',
-  human: 'bg-fce-green/20 text-fce-green border-fce-green/40',
-  paused: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40',
-  closed: 'bg-muted text-muted-foreground border-border',
+const STATUS_BADGE: Record<Conversation['status'], string> = {
+  nina: 'badge-brand',
+  human: 'badge-success',
+  paused: 'badge-warning',
+  closed: 'badge-neutral',
+};
+
+const STATUS_DOT: Record<Conversation['status'], string> = {
+  nina: 'bg-primary',
+  human: 'bg-fce-green',
+  paused: 'bg-yellow-500',
+  closed: 'bg-muted-foreground',
 };
 
 export default function ConversationDetailPage() {
@@ -264,61 +272,47 @@ export default function ConversationDetailPage() {
       title={conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'Conversa'}
       subtitle={conversation.contact?.phoneNumber}
       actions={
-        <span
-          className={`text-[10px] px-2 py-1 rounded border ${STATUS_COLORS[conversation.status]}`}
-        >
-          {STATUS_LABELS[conversation.status]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`badge-dot ${STATUS_DOT[conversation.status]} ${conversation.status === 'nina' ? 'animate-pulse-dot' : ''}`} />
+          <span className={STATUS_BADGE[conversation.status]}>
+            {STATUS_LABELS[conversation.status]}
+          </span>
+        </div>
       }
       bare
     >
       {/* Action bar */}
-      <div className="border-b border-border bg-card/30 p-3">
-        <div className="max-w-3xl mx-auto flex gap-2 justify-center flex-wrap">
+      <div className="border-b border-border bg-card/30 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto p-3 flex gap-2 justify-center flex-wrap">
           {/* Status changes */}
           {conversation.status !== 'human' && (
-            <button
-              onClick={() => changeStatus('human')}
-              className="px-3 py-1.5 rounded-lg gradient-pink text-white text-xs font-semibold"
-            >
-              Assumir
+            <button onClick={() => changeStatus('human')} className="btn-primary btn-sm">
+              Assumir conversa
             </button>
           )}
           {conversation.status === 'human' && (
-            <button
-              onClick={() => changeStatus('nina')}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs text-foreground hover:bg-card"
-            >
+            <button onClick={() => changeStatus('nina')} className="btn-secondary btn-sm">
               Devolver pra DANI
             </button>
           )}
           {conversation.status !== 'paused' && conversation.status !== 'closed' && (
-            <button
-              onClick={() => changeStatus('paused')}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs text-foreground hover:bg-card"
-            >
+            <button onClick={() => changeStatus('paused')} className="btn-secondary btn-sm">
               Pausar
             </button>
           )}
           {conversation.status !== 'closed' && (
-            <button
-              onClick={() => changeStatus('closed')}
-              className="px-3 py-1.5 rounded-lg border border-fce-red/40 text-fce-red text-xs hover:bg-fce-red/10"
-            >
+            <button onClick={() => changeStatus('closed')} className="btn-danger btn-sm">
               Fechar
             </button>
           )}
           {conversation.status === 'closed' && (
-            <button
-              onClick={() => changeStatus('nina')}
-              className="px-3 py-1.5 rounded-lg border border-border text-xs text-foreground hover:bg-card"
-            >
+            <button onClick={() => changeStatus('nina')} className="btn-secondary btn-sm">
               Reabrir
             </button>
           )}
 
           {/* Quick actions */}
-          <div className="w-px h-6 bg-border self-center mx-1" />
+          <div className="divider-v mx-1" />
           <button
             onClick={() => {
               setDealForm({
@@ -330,8 +324,7 @@ export default function ConversationDetailPage() {
               setShowDealModal(true);
             }}
             disabled={!conversation.contact}
-            className="px-3 py-1.5 rounded-lg border border-border text-xs text-foreground hover:bg-card
-                       disabled:opacity-40"
+            className="btn-secondary btn-sm"
           >
             + Deal
           </button>
@@ -346,56 +339,101 @@ export default function ConversationDetailPage() {
               setShowApptModal(true);
             }}
             disabled={!conversation.contact}
-            className="px-3 py-1.5 rounded-lg border border-border text-xs text-foreground hover:bg-card
-                       disabled:opacity-40"
+            className="btn-secondary btn-sm"
           >
             + Agendar
           </button>
           <button
             onClick={handleAnalyze}
             disabled={analyzing || messages.length === 0}
-            className="px-3 py-1.5 rounded-lg border border-fce-pink/40 text-fce-pink text-xs hover:bg-fce-pink/10
-                       disabled:opacity-40"
+            className="btn-sm rounded-md border border-primary/30 text-primary hover:bg-primary/10 disabled:opacity-40 transition-colors"
           >
-            {analyzing ? 'Analisando...' : '🤖 Analisar'}
+            {analyzing ? 'Analisando...' : '✨ Analisar IA'}
           </button>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 bg-background">
         <div className="max-w-3xl mx-auto space-y-3">
           {messages.length === 0 && (
-            <p className="text-center text-muted-foreground text-sm py-12">
-              Nenhuma mensagem ainda
-            </p>
+            <div className="text-center text-muted-foreground text-sm py-16">
+              <p>Nenhuma mensagem ainda</p>
+              <p className="text-xs mt-1 opacity-60">Aguardando primeira interação...</p>
+            </div>
           )}
-          {messages.map((m) => {
+          {messages.map((m, idx) => {
             const isClient = m.fromType === 'user';
             const isDani = m.fromType === 'nina';
+            const isHuman = m.fromType === 'human';
+            const prevMsg = messages[idx - 1];
+            const sameAuthor = prevMsg?.fromType === m.fromType;
+            const contactName =
+              conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'C';
+
             return (
-              <div key={m.id} className={`flex ${isClient ? 'justify-start' : 'justify-end'}`}>
-                <div
-                  className={`max-w-[75%] rounded-xl px-3.5 py-2 text-sm whitespace-pre-wrap ${
-                    isClient
-                      ? 'bg-card border border-border text-foreground'
-                      : isDani
-                      ? 'gradient-pink text-white'
-                      : 'bg-fce-green text-white'
-                  }`}
-                >
-                  {m.content ?? `[${m.messageType}]`}
-                  <div className="text-[10px] opacity-60 mt-1">
-                    {new Date(m.createdAt).toLocaleString('pt-BR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      day: '2-digit',
-                      month: '2-digit',
-                    })}
-                    {isDani && ' · DANI'}
-                    {m.fromType === 'human' && ' · Humano'}
+              <div
+                key={m.id}
+                className={`flex gap-2 ${isClient ? 'justify-start' : 'justify-end'} ${
+                  sameAuthor ? 'mt-0.5' : 'mt-3'
+                } animate-fade-in`}
+              >
+                {/* Avatar client (esquerda) */}
+                {isClient && (
+                  <div className="shrink-0 w-7">
+                    {!sameAuthor && <Avatar fallback={contactName} size="sm" />}
+                  </div>
+                )}
+                <div className="flex flex-col gap-0.5 max-w-[75%]">
+                  {!sameAuthor && (
+                    <div
+                      className={`text-[10px] text-muted-foreground px-1 ${
+                        isClient ? 'text-left' : 'text-right'
+                      }`}
+                    >
+                      {isClient
+                        ? conversation.contact?.name ?? 'Cliente'
+                        : isDani
+                          ? 'DANI'
+                          : 'Bia (humano)'}
+                    </div>
+                  )}
+                  <div
+                    className={`whitespace-pre-wrap ${
+                      isClient ? 'bubble-nina' : isDani ? 'bubble-user' : 'bubble-human'
+                    }`}
+                  >
+                    {m.content ?? <span className="opacity-60">[{m.messageType}]</span>}
+                    <div
+                      className={`text-[10px] mt-1 ${
+                        isClient ? 'text-muted-foreground' : 'opacity-70'
+                      }`}
+                    >
+                      {new Date(m.createdAt).toLocaleString('pt-BR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        day: '2-digit',
+                        month: '2-digit',
+                      })}
+                    </div>
                   </div>
                 </div>
+                {/* Avatar nina/human (direita) */}
+                {!isClient && (
+                  <div className="shrink-0 w-7">
+                    {!sameAuthor && (
+                      <div
+                        className={`avatar-sm font-semibold ${
+                          isDani
+                            ? 'bg-gradient-to-br from-pink-500/40 to-pink-700/30 text-pink-100'
+                            : 'bg-gradient-to-br from-green-500/40 to-green-700/30 text-green-100'
+                        }`}
+                      >
+                        {isDani ? 'D' : isHuman ? 'B' : '?'}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -706,16 +744,17 @@ export default function ConversationDetailPage() {
         </div>
       )}
 
-      {/* Input */}
-      <div className="border-t border-border bg-background p-3 sticky bottom-0">
-        <div className="max-w-3xl mx-auto">
+      {/* Input footer sticky */}
+      <div className="border-t border-border bg-card/40 backdrop-blur-sm p-3 sticky bottom-0">
+        <div className="max-w-3xl mx-auto space-y-2">
           {!isHumanMode && !isClosed && (
-            <p className="text-xs text-muted-foreground text-center mb-2">
-              ⓘ Assuma a conversa pra responder manualmente. DANI esta no comando.
-            </p>
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <span className="badge-dot bg-primary animate-pulse-dot" />
+              DANI está no comando. Clique <span className="text-foreground font-medium">Assumir conversa</span> pra responder manualmente.
+            </div>
           )}
           {error && (
-            <div className="rounded-lg border border-fce-red/40 bg-fce-red/10 p-2 mb-2 text-xs text-fce-red">
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-2 text-xs text-destructive">
               {error}
             </div>
           )}
@@ -728,19 +767,15 @@ export default function ConversationDetailPage() {
                 isClosed
                   ? 'Conversa fechada'
                   : isHumanMode
-                  ? 'Responder como humano...'
-                  : 'Assuma pra responder'
+                    ? 'Responder como Bia...'
+                    : 'Assuma a conversa pra responder'
               }
-              className="flex-1 px-3 py-2.5 rounded-lg bg-card border border-border
-                         text-foreground placeholder:text-muted-foreground text-sm
-                         focus:outline-none focus:ring-2 focus:ring-ring
-                         disabled:opacity-60"
+              className="input-base input-lg flex-1"
             />
             <button
               type="submit"
               disabled={!isHumanMode || isClosed || sending || !input.trim()}
-              className="px-5 py-2.5 rounded-lg gradient-pink text-white text-sm font-semibold
-                         disabled:opacity-40 disabled:cursor-not-allowed"
+              className="btn-primary btn-lg"
             >
               {sending ? '...' : 'Enviar'}
             </button>
