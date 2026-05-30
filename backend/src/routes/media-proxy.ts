@@ -364,6 +364,122 @@ media.post('/init-dani/:accountId', async (c) => {
   }
 });
 
+// ── GET /media/test-pause-flow ───────────────────────
+// Simula fluxo: cliente -> DANI -> humano -> cliente -> deve silenciar
+media.get('/test-pause-flow', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  const trace: Record<string, unknown> = { accountId };
+  try {
+    const { contacts, conversations, messages } = await import('../db/schema.js');
+    const { saveMessage, isDaniActiveForConversation, reactivateDani } = await import(
+      '../lib/dani-conversations.js'
+    );
+    const { processDaniMessage } = await import('../lib/dani-orchestrator.js');
+
+    // 1. Cria contact + conversation de teste
+    const phone = `test-pause-${Date.now()}`;
+    const [contact] = await db
+      .insert(contacts)
+      .values({ accountId, phoneNumber: phone, displayName: 'Teste Pausa' })
+      .returning({ id: contacts.id });
+    const [conv] = await db
+      .insert(conversations)
+      .values({ accountId, contactId: contact.id, status: 'nina' })
+      .returning({ id: conversations.id });
+    trace.step1_setup = { contactId: contact.id, conversationId: conv.id };
+
+    // 2. Cliente envia mensagem - DANI deve responder
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'user',
+      content: 'oi, tem foto do windi?',
+    });
+    const active1 = await isDaniActiveForConversation(conv.id);
+    trace.step2_clientMsg1 = { daniActive: active1 };
+
+    if (active1) {
+      const r1 = await processDaniMessage('oi, tem foto do windi?', {
+        accountId,
+        contactId: contact.id,
+        history: [],
+      });
+      await saveMessage({
+        conversationId: conv.id,
+        accountId,
+        fromType: 'nina',
+        content: r1.reply,
+        processedByNina: true,
+      });
+      trace.step3_daniReply = {
+        replied: !!r1.reply,
+        reply: r1.reply.slice(0, 100),
+        attachments: r1.attachments.length,
+      };
+    }
+
+    // 4. HUMANO envia mensagem - status deve virar 'human' automaticamente
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'human',
+      content: 'Oi! Aqui e a Bia, posso confirmar o pedido?',
+    });
+    const active2 = await isDaniActiveForConversation(conv.id);
+    trace.step4_humanMsg = { daniActiveAfter: active2 };
+
+    // 5. Cliente envia OUTRA mensagem - DANI NAO deve responder
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'user',
+      content: 'sim quero confirmar 2 unidades',
+    });
+    const active3 = await isDaniActiveForConversation(conv.id);
+    trace.step5_clientMsg2 = {
+      daniActive: active3,
+      shouldRespond: false,
+      ok: !active3,
+    };
+
+    // 6. Reativa DANI
+    await reactivateDani(conv.id);
+    const active4 = await isDaniActiveForConversation(conv.id);
+    trace.step6_reactivate = { daniActive: active4, ok: active4 };
+
+    // 7. Cliente envia mensagem - DANI deve voltar a responder
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'user',
+      content: 'oi, sobre o moises portatil',
+    });
+    const active5 = await isDaniActiveForConversation(conv.id);
+    trace.step7_clientMsg3 = { daniActive: active5, ok: active5 };
+
+    // Cleanup: remove teste
+    await db.delete(messages).where(eq(messages.conversationId, conv.id));
+    await db.delete(conversations).where(eq(conversations.id, conv.id));
+    await db.delete(contacts).where(eq(contacts.id, contact.id));
+
+    trace.verdict = {
+      step2_initialActive: active1 === true,
+      step4_humanPaused: active2 === false,
+      step5_silencedAfterHuman: active3 === false,
+      step6_reactivated: active4 === true,
+      step7_backToNina: active5 === true,
+      ALL_OK: active1 && !active2 && !active3 && active4 && active5,
+    };
+
+    return c.json(trace);
+  } catch (err) {
+    trace.error = (err as Error).message;
+    trace.stack = (err as Error).stack?.slice(0, 500);
+    return c.json(trace, 500);
+  }
+});
+
 // ── GET /media/whatsapp-pipeline-test ────────────────
 // Diagnostico completo do pipeline WhatsApp pra producao
 media.get('/whatsapp-pipeline-test', async (c) => {
