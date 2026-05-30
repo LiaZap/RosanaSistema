@@ -92,7 +92,7 @@ export async function analyzeConversation(conversationId: string): Promise<Conve
     .join('\n');
 
   const model = client.getGenerativeModel({
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.5-flash',
     systemInstruction: ANALYSIS_PROMPT,
     generationConfig: {
       temperature: 0.3,

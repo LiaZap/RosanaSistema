@@ -24,9 +24,10 @@ interface NinaSettings {
 }
 
 const MODEL_LABELS: Record<string, string> = {
-  flash: 'gemini-1.5-flash (rapido, barato)',
-  pro: 'gemini-1.5-pro (mais preciso, mais caro)',
-  preview: 'gemini-2.0-flash-exp (preview)',
+  flash: 'gemini-2.5-flash (rapido, barato - recomendado)',
+  pro: 'gemini-2.5-pro (mais preciso, mais caro)',
+  lite: 'gemini-2.5-flash-lite (mais barato)',
+  preview: 'gemini-2.0-flash (alternativa estavel)',
 };
 
 export default function AgentSettingsPage() {

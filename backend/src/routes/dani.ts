@@ -34,7 +34,7 @@ const settingsUpdateSchema = z.object({
   sdrName: z.string().min(1).max(100).optional(),
   companyName: z.string().min(1).max(255).optional(),
   systemPromptOverride: z.string().max(50_000).nullable().optional(),
-  aiModelMode: z.enum(['flash', 'pro', 'preview']).optional(),
+  aiModelMode: z.enum(['flash', 'pro', 'preview', 'lite']).optional(),
 });
 
 /** Garante que o user logado e membro ativo da account */
