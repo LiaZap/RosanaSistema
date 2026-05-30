@@ -68,7 +68,9 @@ crm.get('/conversations', requireAuth, async (c) => {
   if (!accountId) throw new ValidationError('accountId required');
   await assertAccountMember(user.id, accountId);
 
-  const status = c.req.query('status'); // optional filter
+  const statusRaw = c.req.query('status'); // optional filter
+  const statusParse = z.enum(['nina', 'human', 'paused', 'closed']).safeParse(statusRaw);
+  const status = statusParse.success ? statusParse.data : null;
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
 
   // Subquery pra ultima mensagem
@@ -87,7 +89,7 @@ crm.get('/conversations', requireAuth, async (c) => {
 
   const whereClauses = [eq(conversations.accountId, accountId)];
   if (status) {
-    whereClauses.push(eq(conversations.status, status as 'nina' | 'human' | 'paused' | 'closed'));
+    whereClauses.push(eq(conversations.status, status));
   }
 
   const rows = await db
@@ -101,6 +103,10 @@ crm.get('/conversations', requireAuth, async (c) => {
       contactPhone: contacts.phoneNumber,
       lastMessage: lastMessageSub.content,
       lastMessageFrom: lastMessageSub.fromType,
+      intentLabel: conversations.intentLabel,
+      sentiment: conversations.sentiment,
+      leadScore: conversations.leadScore,
+      followupState: conversations.followupState,
     })
     .from(conversations)
     .leftJoin(contacts, eq(conversations.contactId, contacts.id))

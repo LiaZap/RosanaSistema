@@ -18,6 +18,28 @@ interface ConversationRow {
   contactPhone: string;
   lastMessage: string | null;
   lastMessageFrom: 'user' | 'nina' | 'human' | null;
+  intentLabel: string | null;
+  sentiment: 'positivo' | 'neutro' | 'negativo' | null;
+  leadScore: number;
+  followupState: string | null;
+}
+
+const INTENT_LABELS: Record<string, string> = {
+  curioso: 'curioso',
+  comprador: 'comprador',
+  aluguel: 'aluguel',
+  consultoria: 'consultoria',
+  reclamacao: 'reclamação',
+  suporte: 'suporte',
+  comprovante: 'comprovante',
+  despedida: 'despedida',
+};
+
+function leadBadge(score: number): { label: string; cls: string } | null {
+  if (score >= 70) return { label: '🔥 quente', cls: 'bg-fce-red/15 text-fce-red border-fce-red/30' };
+  if (score >= 30) return { label: '🌡 morno', cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
+  if (score > 0) return { label: '❄ frio', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' };
+  return null;
 }
 
 interface Stats {
@@ -197,7 +219,7 @@ export default function ConversationsPage() {
                 {(conv.contactName?.[0] ?? conv.contactPhone[0] ?? '?').toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-foreground truncate text-sm">
                     {conv.contactName ?? conv.contactPhone}
                   </span>
@@ -206,6 +228,24 @@ export default function ConversationsPage() {
                   >
                     {STATUS_LABELS[conv.status]}
                   </span>
+                  {(() => {
+                    const lb = leadBadge(conv.leadScore);
+                    return lb ? (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${lb.cls}`}>
+                        {lb.label}
+                      </span>
+                    ) : null;
+                  })()}
+                  {conv.intentLabel && conv.intentLabel !== 'curioso' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-card text-muted-foreground">
+                      {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
+                    </span>
+                  )}
+                  {conv.followupState === 'sent' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-fce-pink/10 text-fce-pink border-fce-pink/30">
+                      ↻ follow-up
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
                   {conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human' ? '↗ ' : ''}

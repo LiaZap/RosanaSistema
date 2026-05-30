@@ -29,6 +29,7 @@ import {
   sendTextMessage,
 } from './evolution-client.js';
 import { transformedUrl } from './cloudinary-client.js';
+import { classifyConversation } from './intent-classifier.js';
 import { logger } from './logger.js';
 
 /**
@@ -279,6 +280,13 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
       conversationId,
     } satisfies OutboundJobData);
   }
+
+  // 12. Classifica intent + lead_score async (NAO bloqueia o ai-reply).
+  // Sprint 7. Erros sao swallowed - classificacao eh nice-to-have, mas
+  // logamos warn pra ter visibilidade em producao.
+  classifyConversation(conversationId).catch((err) =>
+    logger.warn({ err: (err as Error).message, conversationId }, '[AiReply] background classification failed'),
+  );
 }
 
 /**
