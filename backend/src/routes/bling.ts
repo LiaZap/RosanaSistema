@@ -17,6 +17,7 @@ import {
   exchangeCodeForTokens,
 } from '../lib/bling-client.js';
 import { syncBlingCatalog, countProducts } from '../lib/bling-sync.js';
+import { getRedis } from '../lib/queues.js';
 import { logger } from '../lib/logger.js';
 
 const bling = new Hono();
@@ -214,6 +215,57 @@ bling.get('/auth/callback', async (c) => {
     return c.redirect(`${FRONTEND_URL}/bling?connected=1`, 302);
   } catch (err) {
     return errorRedirect((err as Error).message);
+  }
+});
+
+// ── GET /bling/circuit-breaker ──────────────────────
+// Status do circuit breaker do refresh (Cloudflare 1015 cooldown)
+bling.get('/circuit-breaker', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const redis = getRedis();
+  const okKey = `fce:bling:refresh:ok:${accountId}`;
+  const failKey = `fce:bling:refresh:fail:${accountId}`;
+
+  try {
+    const [okTtl, failTtl, failReason] = await Promise.all([
+      redis.ttl(okKey),
+      redis.ttl(failKey),
+      redis.get(failKey),
+    ]);
+
+    return c.json({
+      okCooldown: okTtl > 0 ? { ttlSeconds: okTtl } : null,
+      failCooldown: failTtl > 0 ? { ttlSeconds: failTtl, reason: failReason } : null,
+      state: failTtl > 0 ? 'cooldown_after_failure' : okTtl > 0 ? 'recently_refreshed' : 'ready',
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+// ── POST /bling/circuit-breaker/reset ───────────────
+// Limpa cooldowns - pra usar quando Cloudflare ja liberou
+bling.post('/circuit-breaker/reset', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const accountId = body.accountId || c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const redis = getRedis();
+  const okKey = `fce:bling:refresh:ok:${accountId}`;
+  const failKey = `fce:bling:refresh:fail:${accountId}`;
+
+  try {
+    const [okDel, failDel] = await Promise.all([redis.del(okKey), redis.del(failKey)]);
+    logger.info({ accountId, okDel, failDel }, '[Bling] circuit breaker reset');
+    return c.json({ ok: true, cleared: { ok: okDel === 1, fail: failDel === 1 } });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
   }
 });
 

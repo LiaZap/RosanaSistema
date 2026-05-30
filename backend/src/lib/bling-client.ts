@@ -126,6 +126,7 @@ export async function refreshTokens(opts: {
  */
 const REFRESH_COOLDOWN_OK_S = 60;
 const REFRESH_COOLDOWN_FAIL_S = 300;
+const REFRESH_COOLDOWN_RATELIMIT_S = 900; // 15min pra Cloudflare 1015 destravar
 
 export async function getValidAccessToken(accountId: string): Promise<string | null> {
   const cred = await db.query.blingCredentials.findFirst({
@@ -196,12 +197,17 @@ export async function getValidAccessToken(accountId: string): Promise<string | n
     return tokens.access_token;
   } catch (err) {
     const msg = (err as Error).message;
+    // Detecta Cloudflare 1015 / rate limit -> cooldown maior
+    const isRateLimit = /\b(429|1015|rate limit|rate-limit|too many)\b/i.test(msg);
+    const cooldown = isRateLimit ? REFRESH_COOLDOWN_RATELIMIT_S : REFRESH_COOLDOWN_FAIL_S;
     logger.error(
-      { accountId, err: msg },
-      '[Bling] refresh failed - entering 5min cooldown',
+      { accountId, err: msg, cooldown, isRateLimit },
+      isRateLimit
+        ? '[Bling] CLOUDFLARE RATE LIMIT - 15min cooldown'
+        : '[Bling] refresh failed - 5min cooldown',
     );
-    // Marca cooldown de falha pra evitar 429
-    redis.set(failKey, msg.slice(0, 200), 'EX', REFRESH_COOLDOWN_FAIL_S).catch(() => {});
+    // Marca cooldown de falha
+    redis.set(failKey, msg.slice(0, 200), 'EX', cooldown).catch(() => {});
     // Retorna token atual (pode funcionar se nao expirou ainda)
     return cred.accessToken;
   }
