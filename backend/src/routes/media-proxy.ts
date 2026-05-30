@@ -381,7 +381,7 @@ media.get('/test-pause-flow', async (c) => {
     const phone = `test-pause-${Date.now()}`;
     const [contact] = await db
       .insert(contacts)
-      .values({ accountId, phoneNumber: phone, displayName: 'Teste Pausa' })
+      .values({ accountId, phoneNumber: phone, name: 'Teste Pausa' })
       .returning({ id: contacts.id });
     const [conv] = await db
       .insert(conversations)
