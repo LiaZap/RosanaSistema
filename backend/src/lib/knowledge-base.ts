@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { knowledgeBase } from '../db/schema.js';
 import { logger } from './logger.js';
@@ -87,18 +87,20 @@ export async function loadContextualKB(opts: {
           eq(knowledgeBase.accountId, opts.accountId),
           eq(knowledgeBase.isActive, true),
           eq(knowledgeBase.alwaysInclude, false),
-          sql`${knowledgeBase.category} = ANY(${triggeredCategories})`,
+          inArray(knowledgeBase.category, triggeredCategories),
         ),
       )
       .orderBy(desc(knowledgeBase.priority))
       .limit(maxChunks);
   }
 
-  // 3. Tag-based search (busca por palavras da msg nas tags)
+  // 3. Tag-based search (busca por palavras da msg nas tags jsonb)
+  // Estrategia simples: carrega todos os ativos da conta, filtra em JS por
+  // tags. Funciona ate ~500 chunks por conta sem precisar de GIN index.
   const keywords = extractKeywords(msgLower);
   let tagChunks: typeof alwaysIncluded = [];
   if (keywords.length > 0 && contextChunks.length < maxChunks) {
-    tagChunks = await db
+    const candidates = await db
       .select()
       .from(knowledgeBase)
       .where(
@@ -106,14 +108,15 @@ export async function loadContextualKB(opts: {
           eq(knowledgeBase.accountId, opts.accountId),
           eq(knowledgeBase.isActive, true),
           eq(knowledgeBase.alwaysInclude, false),
-          sql`${knowledgeBase.tags} ?| ARRAY[${sql.join(
-            keywords.map((k) => sql`${k}`),
-            sql`, `,
-          )}]::text[]`,
         ),
       )
       .orderBy(desc(knowledgeBase.priority))
-      .limit(Math.max(0, maxChunks - contextChunks.length));
+      .limit(200);
+
+    const keywordSet = new Set(keywords);
+    tagChunks = candidates
+      .filter((c) => Array.isArray(c.tags) && c.tags.some((t) => keywordSet.has(t.toLowerCase())))
+      .slice(0, Math.max(0, maxChunks - contextChunks.length));
   }
 
   // Dedupe (by id) and merge
