@@ -302,6 +302,31 @@ media.post('/refresh/:productId', async (c) => {
   }
 });
 
+// ── GET /media/webhook-url/:accountId ────────────────
+// Retorna a URL exata do webhook que deve ser configurada no Evolution
+media.get('/webhook-url/:accountId', async (c) => {
+  const accountId = c.req.param('accountId');
+  try {
+    const { whatsappAccountSettings } = await import('../db/schema.js');
+    const s = await db.query.whatsappAccountSettings.findFirst({
+      where: eq(whatsappAccountSettings.accountId, accountId),
+    });
+    if (!s?.verifyToken) {
+      return c.json({ error: 'verify token nao configurado' }, 404);
+    }
+    const apiBase = process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host';
+    const webhookUrl = `${apiBase}/whatsapp/webhook/${accountId}?token=${s.verifyToken}`;
+    return c.json({
+      webhookUrl,
+      events: ['messages.upsert', 'messages.update', 'connection.update'],
+      webhook_by_events: false,
+      instructions: 'Cole essa URL no Evolution Manager > Instance > Webhook',
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/init-dani/:accountId ─────────────────
 // Cria nina_settings com defaults pra DANI ficar ativa
 media.post('/init-dani/:accountId', async (c) => {
