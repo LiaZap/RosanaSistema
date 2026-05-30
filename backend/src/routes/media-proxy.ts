@@ -244,6 +244,32 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/search-test ───────────────────────────
+// Debug: testa a busca de produtos (rota da DANI)
+media.get('/search-test', async (c) => {
+  const q = c.req.query('q') ?? '';
+  const accountId = c.req.query('accountId') ?? '';
+  if (!q || !accountId) return c.json({ error: 'missing q or accountId' }, 400);
+
+  const { buscarProdutos } = await import('../lib/dani-products.js');
+  const results = await buscarProdutos({ accountId, consulta: q, limit: 5 });
+  return c.json({
+    query: q,
+    count: results.length,
+    products: results.map((r) => ({
+      nome: r.nome,
+      preco: r.preco,
+      estoque: r.estoque,
+      disponivel: r.disponivel,
+      imagem: r.imagem,
+      blingId: r.blingId,
+      codigo: r.codigo,
+      marca: r.marca,
+      stockSource: r.stockSource,
+    })),
+  });
+});
+
 // ── GET /media/upload-debug/:productId ───────────────
 // Debug: chama uploadImageFromUrl manualmente e mostra TUDO
 media.get('/upload-debug/:productId', async (c) => {
