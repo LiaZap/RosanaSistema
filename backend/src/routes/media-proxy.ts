@@ -143,6 +143,8 @@ media.get('/file/:productId', async (c) => {
   const result = await uploadImageFromUrl({
     productId,
     imageUrl: product.imagemBling,
+    accountId: product.accountId,
+    blingId: product.blingId,
   });
   if (!result) {
     return c.text('source image unavailable', 502);

@@ -168,6 +168,43 @@ export interface BlingProductRaw {
 }
 
 /**
+ * Pega 1 produto pelo blingId. Retorna URL de imagem ATUAL (pre-signed
+ * URLs do S3 Bling expiram, entao precisamos buscar fresca antes de baixar).
+ */
+export async function fetchFreshProductImageUrl(opts: {
+  accessToken: string;
+  blingId: string;
+}): Promise<string | null> {
+  const url = `${BLING_API_BASE}/produtos/${opts.blingId}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!res.ok) {
+    return null;
+  }
+
+  const json = (await res.json()) as {
+    data?: {
+      imagemURL?: string;
+      midia?: { imagens?: { externas?: Array<{ link?: string }> } };
+    };
+  };
+
+  // V3 nova: data.midia.imagens.externas[0].link
+  const fromMidia = json.data?.midia?.imagens?.externas?.[0]?.link;
+  if (fromMidia) return fromMidia;
+
+  // V3 antiga: data.imagemURL
+  if (json.data?.imagemURL) return json.data.imagemURL;
+
+  return null;
+}
+
+/**
  * Lista produtos com paginacao. Retorna ate 100 por pagina.
  */
 export async function listProducts(opts: {

@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3
 import { Readable } from 'stream';
 import { db } from '../db/client.js';
 import { produtosCatalogo } from '../db/schema.js';
+import { fetchFreshProductImageUrl, getValidAccessToken } from './bling-client.js';
 import { logger } from './logger.js';
 
 /**
@@ -43,25 +44,81 @@ export function buildProductImageKey(productId: string, ext: string = 'jpg'): st
 }
 
 /**
+ * Tenta baixar imagem com User-Agent comum. Retorna Response ou null.
+ */
+async function tryDownload(imageUrl: string): Promise<Response | null> {
+  try {
+    const res = await fetch(imageUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'image/*,*/*',
+      },
+      redirect: 'follow',
+    });
+    return res;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Baixa imagem da URL externa e salva no MinIO.
- * Retorna a key (path) salva ou null em caso de falha.
+ *
+ * Estrategia anti-S3-expirado:
+ *  1. Tenta baixar URL atual
+ *  2. Se 403/401/410: pega URL fresca do Bling via API (URLs S3 do
+ *     Bling sao pre-signed e expiram), atualiza no banco, tenta de novo
+ *  3. Sucesso: sobe pro MinIO
+ *
+ * Retorna a key salva ou null em caso de falha definitiva.
  */
 export async function uploadImageFromUrl(opts: {
   productId: string;
   imageUrl: string;
+  accountId?: string;
+  blingId?: string | null;
 }): Promise<{ key: string; bytes: number; mimetype: string } | null> {
   try {
-    const res = await fetch(opts.imageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 FCE-Cache/1.0',
-        Accept: 'image/*',
-      },
-      redirect: 'follow',
-    });
-    if (!res.ok) {
+    let res = await tryDownload(opts.imageUrl);
+
+    // S3 do Bling expirou? Tenta pegar URL fresca via API
+    if (
+      (!res || res.status === 403 || res.status === 401 || res.status === 410) &&
+      opts.accountId &&
+      opts.blingId
+    ) {
+      logger.info(
+        { productId: opts.productId, oldStatus: res?.status },
+        '[MinIOCache] URL expired, refreshing from Bling',
+      );
+
+      const token = await getValidAccessToken(opts.accountId);
+      if (token) {
+        const fresh = await fetchFreshProductImageUrl({
+          accessToken: token,
+          blingId: opts.blingId,
+        });
+        if (fresh && fresh !== opts.imageUrl) {
+          // Atualiza no banco pra proxima vez nao precisar refresh
+          await db
+            .update(produtosCatalogo)
+            .set({ imagemBling: fresh, updatedAt: new Date() })
+            .where(eq(produtosCatalogo.id, opts.productId));
+
+          res = await tryDownload(fresh);
+        }
+      }
+    }
+
+    if (!res || !res.ok) {
       logger.warn(
-        { productId: opts.productId, status: res.status, url: opts.imageUrl.slice(0, 100) },
-        '[MinIOCache] download failed',
+        {
+          productId: opts.productId,
+          status: res?.status,
+          url: opts.imageUrl.slice(0, 100),
+        },
+        '[MinIOCache] download failed (after refresh attempt)',
       );
       return null;
     }
@@ -154,6 +211,7 @@ export async function cachePendingProductImages(opts: {
   const pending = await db
     .select({
       id: produtosCatalogo.id,
+      blingId: produtosCatalogo.blingId,
       imagemBling: produtosCatalogo.imagemBling,
     })
     .from(produtosCatalogo)
@@ -174,6 +232,8 @@ export async function cachePendingProductImages(opts: {
     const result = await uploadImageFromUrl({
       productId: p.id,
       imageUrl: p.imagemBling,
+      accountId: opts.accountId,
+      blingId: p.blingId,
     });
     if (!result) {
       failed++;
