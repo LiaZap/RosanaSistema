@@ -235,6 +235,21 @@ media.get('/file/:productId/:idx?', async (c) => {
   }
 });
 
+// ── POST /media/apply-migration-0008 ─────────────────
+// Aplica ALTER TABLE imagens_minio se ainda nao existe
+media.post('/apply-migration-0008', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    // Idempotente: usa IF NOT EXISTS
+    await db.execute(
+      sql`ALTER TABLE produtos_catalogo ADD COLUMN IF NOT EXISTS imagens_minio jsonb DEFAULT '[]'::jsonb`,
+    );
+    return c.json({ ok: true, applied: 'imagens_minio jsonb column' });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/refresh/:productId ───────────────────
 // Invalida cache MinIO + imagemBling do produto, forca re-fetch
 media.post('/refresh/:productId', async (c) => {
