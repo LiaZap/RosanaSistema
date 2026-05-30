@@ -86,7 +86,9 @@ export async function generateDaniReply(opts: {
     generationConfig: {
       temperature: 0.7,
       topP: 0.95,
-      maxOutputTokens: 800,
+      // 2048 evita truncamento em respostas com 3+ produtos ou consultorias.
+      // Observado: 800 cortava em 600+ chars (cólicas, consultoria).
+      maxOutputTokens: 2048,
     },
     ...(opts.tools && opts.tools.length > 0
       ? { tools: [{ functionDeclarations: opts.tools }] }

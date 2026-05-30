@@ -252,10 +252,24 @@ export async function processDaniMessage(
     );
   }
 
+  // Detecta despedida/agradecimento pra forcar silencio absoluto
+  // (mesmo que o modelo gere texto generico, nao envia)
+  const userMsgNorm = message.toLowerCase().trim();
+  const isFarewell = /^(tchau|obrigad[oa]|valeu|brigad[oa]|ate logo|ate mais|ate amanha|boa noite|fui|flw|vlw|ok obrigad[oa]|nao precisa|nao quero|deixa pra la|deixa quieto)[.!\s]*$/i.test(
+    userMsgNorm,
+  );
+
   // Final reply respeitando should_reply do JSON
-  const finalReply = parsed.shouldReply
-    ? (clean.length >= 5 ? clean : 'Pode me contar mais sobre o que voce esta procurando?')
-    : '';
+  let finalReply = '';
+  if (isFarewell) {
+    // Despedida = silencio absoluto (regra de ouro DANI)
+    finalReply = '';
+    logger.info({ userMsg: message.slice(0, 50) }, '[DANI] farewell detected - silenced');
+  } else if (parsed.shouldReply) {
+    // Texto vazio com flag shouldReply=true geralmente = filler todo strippado.
+    // NAO enviar texto generico inventado: melhor ficar em silencio mesmo.
+    finalReply = clean.length >= 5 ? clean : '';
+  }
 
   // Extrai attachments das tool calls (DANI quer mandar foto OU arquivo)
   const attachments: DaniAttachment[] = [];
