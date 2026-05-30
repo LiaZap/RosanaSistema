@@ -8,9 +8,10 @@ import { logger } from './logger.js';
  * Docs: https://developer.bling.com.br
  */
 
+// OAuth endpoints ficam em www; API resources ficam em api.bling.com.br
 const BLING_AUTHORIZE_URL = 'https://www.bling.com.br/Api/v3/oauth/authorize';
 const BLING_TOKEN_URL = 'https://www.bling.com.br/Api/v3/oauth/token';
-const BLING_API_BASE = 'https://www.bling.com.br/Api/v3';
+const BLING_API_BASE = 'https://api.bling.com.br/Api/v3';
 
 export interface BlingTokens {
   access_token: string;

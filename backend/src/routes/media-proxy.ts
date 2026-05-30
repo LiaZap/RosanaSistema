@@ -236,7 +236,7 @@ media.get('/file/:productId/bling-raw', async (c) => {
       return c.json(out, 404);
     }
 
-    const r = await fetch(`https://www.bling.com.br/Api/v3/produtos/${product.blingId}`, {
+    const r = await fetch(`https://api.bling.com.br/Api/v3/produtos/${product.blingId}`, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     });
     out.blingStatus = r.status;
