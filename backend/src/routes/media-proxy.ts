@@ -213,6 +213,46 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/file/:productId/bling-raw ────────────
+// Pega resposta crua do Bling pra debug
+media.get('/file/:productId/bling-raw', async (c) => {
+  const productId = c.req.param('productId');
+  const out: Record<string, unknown> = { productId };
+  try {
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+    if (!product?.blingId || !product.accountId) {
+      out.error = 'product or blingId missing';
+      return c.json(out, 404);
+    }
+    out.blingId = product.blingId;
+
+    const { getValidAccessToken } = await import('../lib/bling-client.js');
+    const token = await getValidAccessToken(product.accountId);
+    out.hasToken = !!token;
+    if (!token) {
+      out.error = 'no Bling token';
+      return c.json(out, 404);
+    }
+
+    const r = await fetch(`https://www.bling.com.br/Api/v3/produtos/${product.blingId}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    });
+    out.blingStatus = r.status;
+    const text = await r.text();
+    try {
+      out.blingJson = JSON.parse(text);
+    } catch {
+      out.blingTextSample = text.slice(0, 1000);
+    }
+    return c.json(out);
+  } catch (err) {
+    out.error = (err as Error).message;
+    return c.json(out, 404);
+  }
+});
+
 // ── GET /media/file/:productId/debug ────────────────
 // Endpoint debug que retorna JSON com estado de cada etapa
 media.get('/file/:productId/debug', async (c) => {
