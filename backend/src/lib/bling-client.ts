@@ -9,9 +9,11 @@ import { logger } from './logger.js';
  * Docs: https://developer.bling.com.br
  */
 
-// OAuth endpoints ficam em www; API resources ficam em api.bling.com.br
+// Authorize fica em www (usuario interage com tela de login Bling)
+// Token e API resources ficam em api.bling.com.br (doc oficial Bling v3)
+// IMPORTANTE: usar www pro /token causa Cloudflare 1015 rate limit!
 const BLING_AUTHORIZE_URL = 'https://www.bling.com.br/Api/v3/oauth/authorize';
-const BLING_TOKEN_URL = 'https://www.bling.com.br/Api/v3/oauth/token';
+const BLING_TOKEN_URL = 'https://api.bling.com.br/Api/v3/oauth/token';
 const BLING_API_BASE = 'https://api.bling.com.br/Api/v3';
 
 export interface BlingTokens {
@@ -41,12 +43,13 @@ export function buildAuthorizeUrl(opts: {
   return `${BLING_AUTHORIZE_URL}?${params.toString()}`;
 }
 
-// Headers que parecem browser real - Cloudflare e mais permissivo
-const HUMAN_HEADERS = {
+// Headers obrigatorios pelo Bling OAuth doc:
+// - Accept: 1.0 (versionamento exigido pela doc)
+// User-Agent realista de Chrome ajuda em algumas rotas com proteção bot
+const OAUTH_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-  Accept: 'application/json,text/plain,*/*',
+  Accept: '1.0',
 };
 
 /**
@@ -67,7 +70,7 @@ export async function exchangeCodeForTokens(opts: {
   const res = await fetch(BLING_TOKEN_URL, {
     method: 'POST',
     headers: {
-      ...HUMAN_HEADERS,
+      ...OAUTH_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: `Basic ${basic}`,
     },
@@ -99,7 +102,7 @@ export async function refreshTokens(opts: {
   const res = await fetch(BLING_TOKEN_URL, {
     method: 'POST',
     headers: {
-      ...HUMAN_HEADERS,
+      ...OAUTH_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: `Basic ${basic}`,
     },
