@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
+import { Avatar } from '../components/ui/avatar';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -58,10 +59,10 @@ const STATUS_LABELS: Record<ConversationRow['status'], string> = {
 };
 
 const STATUS_COLORS: Record<ConversationRow['status'], string> = {
-  nina: 'bg-primary/10 text-primary border-primary/20',
-  human: 'bg-fce-green/10 text-fce-green border-fce-green/20',
-  paused: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
-  closed: 'bg-muted text-muted-foreground border-border',
+  nina: 'badge-brand',
+  human: 'badge-success',
+  paused: 'badge-warning',
+  closed: 'badge-neutral',
 };
 
 function timeAgo(date: string | null): string {
@@ -207,23 +208,20 @@ export default function ConversationsPage() {
             <Link
               key={conv.id}
               to={`/conversations/${conv.id}`}
-              className="card-base hover:border-border hover:bg-muted/30
-                         p-3 flex gap-3 transition-colors"
+              className="card-elev-hover hover:bg-card-elevated/40
+                         p-3 flex gap-3 transition-all"
             >
-              <div
-                className="w-10 h-10 rounded-full bg-secondary border border-border
-                           flex items-center justify-center text-sm font-semibold text-foreground shrink-0"
-              >
-                {(conv.contactName?.[0] ?? conv.contactPhone[0] ?? '?').toUpperCase()}
-              </div>
+              <Avatar
+                fallback={conv.contactName ?? conv.contactPhone}
+                size="md"
+                status={conv.status === 'nina' ? 'online' : conv.status === 'human' ? 'busy' : null}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-medium text-foreground truncate text-sm">
                     {conv.contactName ?? conv.contactPhone}
                   </span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded border ${STATUS_COLORS[conv.status]}`}
-                  >
+                  <span className={STATUS_COLORS[conv.status]}>
                     {STATUS_LABELS[conv.status]}
                   </span>
                   {(() => {
@@ -235,14 +233,12 @@ export default function ConversationsPage() {
                     ) : null;
                   })()}
                   {conv.intentLabel && conv.intentLabel !== 'curioso' && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border border-border bg-card text-muted-foreground">
+                    <span className="badge-neutral">
                       {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
                     </span>
                   )}
                   {conv.followupState === 'sent' && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded border bg-fce-pink/10 text-fce-pink border-fce-pink/30">
-                      ↻ follow-up
-                    </span>
+                    <span className="badge-brand">↻ follow-up</span>
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground truncate mt-0.5">
