@@ -343,9 +343,38 @@ export async function processDaniMessage(
     }
   }
 
+  // SALVA-VIDAS: se Gemini esgotou iterations e ficou em silencio MAS achou
+  // produto via buscar_produto_detalhe, monta resposta minima a partir do
+  // ultimo produto encontrado em vez de mandar nada.
+  if (!finalReply && !isFarewell && attachments.length > 0) {
+    // Pega o ultimo produto da ultima tool call buscar_produto_detalhe
+    const lastProductCall = [...generation.toolCalls]
+      .reverse()
+      .find((tc) => tc.name === 'buscar_produto_detalhe');
+    if (lastProductCall) {
+      const consulta = String((lastProductCall.args as Record<string, unknown>).consulta ?? '');
+      try {
+        const produto = await buscarProdutoDetalhe({ accountId: ctx.accountId, consulta });
+        if (produto) {
+          const preco = produto.preco ? `R$ ${produto.preco.toFixed(2).replace('.', ',')}` : '';
+          finalReply =
+            `Aqui está o *${produto.nome}*!` +
+            (preco ? ` Está por *${preco}*.` : '') +
+            `\n\nQuer que eu separe pra você?`;
+          logger.info(
+            { consulta, produto: produto.nome },
+            '[DANI] fallback reply from product (gemini silenced)',
+          );
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, '[DANI] fallback reply failed');
+      }
+    }
+  }
+
   return {
     reply: finalReply,
-    shouldReply: parsed.shouldReply,
+    shouldReply: !!finalReply,
     reasoning: parsed.reasoning,
     modelUsed: modelMode,
     durationMs: Date.now() - start,

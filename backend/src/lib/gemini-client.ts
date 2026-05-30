@@ -55,7 +55,8 @@ export interface GenerateResult {
   iterations: number;
 }
 
-const MAX_TOOL_ITERATIONS = 5;
+// 4 iterations: deixa Gemini fazer 3-4 tool calls e ainda ter espaço pra texto
+const MAX_TOOL_ITERATIONS = 4;
 
 /**
  * Gera resposta da DANI com suporte a function calling.
