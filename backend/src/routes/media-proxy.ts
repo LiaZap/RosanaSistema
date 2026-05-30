@@ -377,8 +377,8 @@ media.get('/test-pause-flow', async (c) => {
     );
     const { processDaniMessage } = await import('../lib/dani-orchestrator.js');
 
-    // 1. Cria contact + conversation de teste
-    const phone = `test-pause-${Date.now()}`;
+    // 1. Cria contact + conversation de teste (phone max 20 chars)
+    const phone = `tp${Date.now().toString().slice(-12)}`;
     const [contact] = await db
       .insert(contacts)
       .values({ accountId, phoneNumber: phone, name: 'Teste Pausa' })
