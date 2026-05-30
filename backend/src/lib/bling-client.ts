@@ -306,25 +306,32 @@ export async function fetchFreshProductImageUrl(opts: {
     return externas[0].link;
   }
 
-  // 2. Internas - pega a imagem PRINCIPAL (ordem 1) do Bling.
-  // Schema real: { link (FULL), linkMiniatura (thumb /t/), validade, ordem }
+  // 2. Internas - REGRA: sempre FULL (link), nunca miniatura.
+  // Schema: { link (FULL), linkMiniatura (thumb /t/), validade, ordem }
+  // Procura a primeira imagem por ordem que tenha link FULL.
+  // Miniatura so se NENHUMA imagem tiver link (caso raro, avisamos).
   const internas = (json.data?.midia?.imagens?.internas ?? [])
     .filter((i) => (i.link || i.linkMiniatura) && validadeOk(i.validade))
     .sort(byOrdem);
-  const principal = internas[0];
-  if (principal?.link) {
+
+  // PASS 1: procura por imagem com link FULL (qualquer ordem)
+  const fullSize = internas.find((i) => i.link);
+  if (fullSize?.link) {
     logger.debug(
-      { blingId: opts.blingId, source: 'interna.link', ordem: principal.ordem },
-      '[Bling] image URL resolved (full, principal)',
+      { blingId: opts.blingId, source: 'interna.link', ordem: fullSize.ordem },
+      '[Bling] image URL resolved (FULL size)',
     );
-    return principal.link;
+    return fullSize.link;
   }
-  if (principal?.linkMiniatura) {
-    logger.debug(
-      { blingId: opts.blingId, source: 'interna.linkMiniatura', ordem: principal.ordem },
-      '[Bling] image URL resolved (thumb fallback)',
+
+  // PASS 2: ultimo recurso - linkMiniatura (so se ZERO imagens tem link)
+  const thumb = internas.find((i) => i.linkMiniatura);
+  if (thumb?.linkMiniatura) {
+    logger.warn(
+      { blingId: opts.blingId, ordem: thumb.ordem, totalInternas: internas.length },
+      '[Bling] WARNING: only miniatures available, no full-size image',
     );
-    return principal.linkMiniatura;
+    return thumb.linkMiniatura;
   }
 
   // 3. Campo legacy V2
