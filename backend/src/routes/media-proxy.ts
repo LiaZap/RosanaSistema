@@ -302,6 +302,150 @@ media.post('/refresh/:productId', async (c) => {
   }
 });
 
+// ── GET /media/whatsapp-pipeline-test ────────────────
+// Diagnostico completo do pipeline WhatsApp pra producao
+media.get('/whatsapp-pipeline-test', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  const out: Record<string, unknown> = { accountId };
+
+  try {
+    // 1. Settings Evolution configurados?
+    const { whatsappAccountSettings, whatsappSessions, ninaSettings } = await import(
+      '../db/schema.js'
+    );
+    const evoSettings = await db.query.whatsappAccountSettings.findFirst({
+      where: eq(whatsappAccountSettings.accountId, accountId),
+    });
+    out.evolutionConfig = {
+      apiUrlSet: !!evoSettings?.apiUrl,
+      apiKeySet: !!evoSettings?.apiKey,
+      verifyTokenSet: !!evoSettings?.verifyToken,
+      apiUrl: evoSettings?.apiUrl,
+    };
+
+    // 2. Sessao salva
+    const session = await db.query.whatsappSessions.findFirst({
+      where: eq(whatsappSessions.accountId, accountId),
+    });
+    out.session = session
+      ? {
+          instanceName: session.instanceName,
+          status: session.status,
+          provider: session.provider,
+          phoneNumber: session.phoneNumber,
+          updatedAt: session.updatedAt,
+        }
+      : null;
+
+    // 3. DANI settings ativos?
+    const dani = await db.query.ninaSettings.findFirst({
+      where: eq(ninaSettings.accountId, accountId),
+    });
+    out.daniConfig = dani
+      ? {
+          isActive: dani.isActive,
+          hasPromptOverride: !!dani.systemPromptOverride,
+          promptOverrideChars: dani.systemPromptOverride?.length ?? 0,
+          model: dani.aiModelMode,
+          bufferWindowMs: dani.bufferWindowMs,
+          sdrName: dani.sdrName,
+          companyName: dani.companyName,
+        }
+      : { error: 'nina_settings missing' };
+
+    // 4. Testa conexao Evolution (live)
+    if (evoSettings?.apiUrl && evoSettings?.apiKey) {
+      try {
+        const { fetchInstances } = await import('../lib/evolution-client.js');
+        const instances = await fetchInstances({
+          settings: {
+            apiUrl: evoSettings.apiUrl,
+            apiKey: evoSettings.apiKey,
+            verifyToken: evoSettings.verifyToken,
+          },
+        });
+        out.evolutionLive = {
+          ok: true,
+          instanceCount: instances.length,
+          instances: instances.map((i) => ({
+            name: i.name,
+            state: i.state,
+            number: i.number,
+            profileName: i.profileName,
+          })),
+        };
+      } catch (err) {
+        out.evolutionLive = { ok: false, error: (err as Error).message };
+      }
+    }
+
+    // 5. Estado das filas
+    const { getRedis } = await import('../lib/queues.js');
+    const redis = getRedis();
+    try {
+      const [inbound, aireply, outbound] = await Promise.all([
+        redis.llen('bull:inbound:wait'),
+        redis.llen('bull:ai-reply:wait'),
+        redis.llen('bull:outbound:wait'),
+      ]);
+      out.queues = { inbound, aireply, outbound };
+    } catch (err) {
+      out.queues = { error: (err as Error).message };
+    }
+
+    // 6. Conta mensagens recentes
+    const { messages, conversations, contacts } = await import('../db/schema.js');
+    const { sql } = await import('drizzle-orm');
+    const [msgCount, convCount, contactCount] = await Promise.all([
+      db.execute(
+        sql`SELECT COUNT(*)::int AS n FROM ${messages} WHERE account_id = ${accountId}`,
+      ),
+      db.execute(
+        sql`SELECT COUNT(*)::int AS n FROM ${conversations} WHERE account_id = ${accountId}`,
+      ),
+      db.execute(
+        sql`SELECT COUNT(*)::int AS n FROM ${contacts} WHERE account_id = ${accountId}`,
+      ),
+    ]);
+    out.dataCount = {
+      messages: (msgCount as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0,
+      conversations: (convCount as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0,
+      contacts: (contactCount as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0,
+    };
+
+    // 7. Verifica produtos sincronizados
+    const { produtosCatalogo } = await import('../db/schema.js');
+    const prodCount = await db.execute(
+      sql`SELECT COUNT(*)::int AS n FROM ${produtosCatalogo} WHERE account_id = ${accountId}`,
+    );
+    out.products = {
+      total: (prodCount as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0,
+    };
+
+    // 8. Diagnostico geral
+    const checks = {
+      evolutionConfigured:
+        out.evolutionConfig &&
+        (out.evolutionConfig as Record<string, unknown>).apiUrlSet &&
+        (out.evolutionConfig as Record<string, unknown>).apiKeySet,
+      evolutionReachable:
+        out.evolutionLive && (out.evolutionLive as Record<string, unknown>).ok,
+      sessionLinked: !!session,
+      daniActive: dani?.isActive ?? false,
+      hasProducts: ((out.products as Record<string, unknown>).total as number) > 0,
+      webhookConfigured: !!evoSettings?.verifyToken,
+    };
+    out.checks = checks;
+    out.productionReady = Object.values(checks).every((v) => v === true);
+
+    return c.json(out);
+  } catch (err) {
+    out.error = (err as Error).message;
+    return c.json(out, 500);
+  }
+});
+
 // ── GET /media/dani-test ─────────────────────────────
 // Debug: simula uma msg pra DANI (sem auth, sem persistir)
 media.get('/dani-test', async (c) => {
