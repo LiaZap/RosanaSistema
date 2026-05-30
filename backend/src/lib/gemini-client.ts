@@ -111,11 +111,18 @@ export async function generateDaniReply(opts: {
     // Sem function calls -> resposta final
     if (!calls || calls.length === 0) {
       const text = result.response.text();
+      // Log de debug se vier vazio (Sprint observabilidade)
+      const candidate = result.response.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      const safetyRatings = candidate?.safetyRatings;
+
       logger.info(
         {
           iterations: iterations + 1,
           toolCallsTotal: toolCalls.length,
           outputChars: text.length,
+          finishReason,
+          ...(text.length === 0 ? { safetyRatings, fullResponse: JSON.stringify(result.response).slice(0, 500) } : {}),
         },
         '[Gemini] DANI reply ready',
       );

@@ -65,7 +65,13 @@ export interface DaniResult {
 
 /**
  * Parseia a resposta esperando JSON { should_reply, message, reasoning }.
- * Fallback se a IA nao seguiu o schema: trata como texto puro com should_reply=true.
+ *
+ * Estrategia defensiva pra evitar silencio acidental:
+ *  - JSON valido + should_reply=false: respeita (silencio explicito)
+ *  - JSON valido + should_reply=true: usa message
+ *  - Texto nao-JSON: trata como resposta direta (fallback)
+ *  - Resposta VAZIA: assume erro/safety block do Gemini -> shouldReply=true
+ *    + msg amigavel (preferir falsa-positiva sobre silencio total inesperado)
  */
 function parseJsonResponse(raw: string): {
   shouldReply: boolean;
@@ -74,6 +80,17 @@ function parseJsonResponse(raw: string): {
   fellBack: boolean;
 } {
   const trimmed = raw.trim();
+
+  // Resposta VAZIA = Gemini provavelmente bloqueou ou falhou.
+  // NAO silencia o cliente sem motivo claro - retorna msg generica.
+  if (!trimmed) {
+    return {
+      shouldReply: true,
+      message: 'Pode me contar mais? Nao consegui entender sua mensagem direito.',
+      reasoning: 'fallback: empty response from LLM (safety block or generation failure)',
+      fellBack: true,
+    };
+  }
 
   // Tenta extrair JSON entre ```json ... ``` se vier em markdown
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -93,11 +110,11 @@ function parseJsonResponse(raw: string): {
     // ignore
   }
 
-  // Fallback: texto puro
+  // Fallback: texto puro (Gemini ignorou o JSON mas mandou texto util)
   return {
-    shouldReply: trimmed.length > 0,
+    shouldReply: true,
     message: trimmed,
-    reasoning: 'fallback: response was not valid JSON',
+    reasoning: 'fallback: response was not valid JSON, treating as plain text',
     fellBack: true,
   };
 }
