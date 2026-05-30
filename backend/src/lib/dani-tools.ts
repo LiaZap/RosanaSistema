@@ -102,6 +102,7 @@ export interface BuscarProdutosToolResult {
     disponivel: boolean;
     estoque: number;
     marca: string | null;
+    estoque_realtime?: boolean; // true se top-3 conferido agora
   }>;
 }
 
@@ -235,6 +236,7 @@ export const TOOL_HANDLERS: Record<
         disponivel: p.disponivel,
         estoque: p.estoque,
         marca: p.marca,
+        estoque_realtime: p.stockSource === 'realtime',
       })),
     } satisfies BuscarProdutosToolResult;
   },

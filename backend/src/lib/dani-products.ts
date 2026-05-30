@@ -1,6 +1,8 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { produtosCatalogo } from '../db/schema.js';
+import { fetchStockBatch } from './bling-stock.js';
+import { logger } from './logger.js';
 
 /**
  * Helpers de busca de produtos usados pelas tools da DANI.
@@ -22,6 +24,7 @@ function normalize(input: string): string {
 
 export interface ProductSearchResult {
   id: string;
+  blingId: string | null;
   nome: string;
   codigo: string | null;
   preco: number | null;
@@ -32,11 +35,13 @@ export interface ProductSearchResult {
   categoria: string | null;
   imagem: string | null; // cloudinary OR bling fallback
   descricaoCurta: string | null;
+  stockSource?: 'realtime' | 'cache'; // de onde veio o estoque
 }
 
 function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult {
   return {
     id: row.id,
+    blingId: row.blingId,
     nome: row.nome,
     codigo: row.codigo,
     preco: row.preco ? Number(row.preco) : null,
@@ -47,7 +52,61 @@ function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult 
     categoria: row.categoria,
     imagem: row.imagemCloudinary ?? row.imagemBling,
     descricaoCurta: row.descricaoCurta,
+    stockSource: 'cache',
   };
+}
+
+/**
+ * Sprint 2: para top-3 produtos retornados, consulta Bling /estoques/saldos
+ * e SOBRESCREVE disponivel/estoque com o valor real. Cache Redis 5s evita
+ * spam quando varias mensagens pedem o mesmo produto.
+ *
+ * Falhas (timeout, Bling down) sao silenciosas: produto fica com stockSource='cache'.
+ */
+async function enrichWithRealtimeStock(
+  accountId: string,
+  results: ProductSearchResult[],
+): Promise<ProductSearchResult[]> {
+  if (results.length === 0) return results;
+
+  const top = results.slice(0, 3);
+  const blingIds = top.map((p) => p.blingId).filter((id): id is string => !!id);
+
+  if (blingIds.length === 0) return results;
+
+  try {
+    const stockMap = await fetchStockBatch({ accountId, blingIds });
+
+    return results.map((p) => {
+      if (!p.blingId) return p;
+      const real = stockMap[p.blingId];
+      if (!real) return p;
+      const changed = p.estoque !== real.saldo || p.disponivel !== real.disponivel;
+      if (changed) {
+        logger.info(
+          {
+            blingId: p.blingId,
+            nome: p.nome,
+            cache: { estoque: p.estoque, disponivel: p.disponivel },
+            real: real,
+          },
+          '[Stock] real-time disagrees with cache',
+        );
+      }
+      return {
+        ...p,
+        estoque: real.saldo,
+        disponivel: real.disponivel,
+        stockSource: 'realtime' as const,
+      };
+    });
+  } catch (err) {
+    logger.warn(
+      { err: (err as Error).message, accountId },
+      '[Stock] enrichment failed - using cache values',
+    );
+    return results;
+  }
 }
 
 /**
@@ -91,7 +150,8 @@ export async function buscarProdutos(opts: {
     .orderBy(desc(score), desc(produtosCatalogo.disponivel))
     .limit(limit);
 
-  return rows.map(mapRow);
+  const mapped = rows.map(mapRow);
+  return await enrichWithRealtimeStock(opts.accountId, mapped);
 }
 
 /**
