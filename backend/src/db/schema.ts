@@ -277,6 +277,7 @@ export const produtosCatalogo = pgTable('produtos_catalogo', {
   imagemCloudinary: text('imagem_cloudinary'),
   cloudinaryUploadedAt: timestamp('cloudinary_uploaded_at', { withTimezone: true }),
   imagemMinio: text('imagem_minio'),
+  imagensMinio: jsonb('imagens_minio').$type<string[]>().default([]),
   minioUploadedAt: timestamp('minio_uploaded_at', { withTimezone: true }),
   marca: varchar('marca', { length: 255 }),
   categoria: varchar('categoria', { length: 255 }),

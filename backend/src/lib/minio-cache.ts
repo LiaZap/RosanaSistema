@@ -38,9 +38,16 @@ export function getS3(): S3Client {
   return _s3;
 }
 
-/** Constroi a chave (path) no bucket pra produto */
-export function buildProductImageKey(productId: string, ext: string = 'jpg'): string {
-  return `products/${productId}.${ext}`;
+/** Constroi a chave (path) no bucket pra produto.
+ *  idx > 0 vira sufixo (_1, _2, ...). idx 0 mantem compat com keys antigas.
+ */
+export function buildProductImageKey(
+  productId: string,
+  ext: string = 'jpg',
+  idx: number = 0,
+): string {
+  const suffix = idx > 0 ? `_${idx}` : '';
+  return `products/${productId}${suffix}.${ext}`;
 }
 
 /**
@@ -186,6 +193,54 @@ export async function streamProductImage(key: string): Promise<{
     logger.debug({ err: (err as Error).message, key }, '[MinIOCache] get failed');
     return null;
   }
+}
+
+/**
+ * Baixa MULTIPLAS imagens em paralelo e salva no MinIO com sufixo.
+ * Retorna array dos resultados (mesma ordem dos inputs).
+ */
+export async function uploadMultipleImages(opts: {
+  productId: string;
+  imageUrls: string[];
+  accountId?: string;
+}): Promise<Array<{ key: string; idx: number; bytes: number; mimetype: string } | null>> {
+  const tasks = opts.imageUrls.map(async (imageUrl, idx) => {
+    try {
+      const res = await tryDownload(imageUrl);
+      if (!res || !res.ok) {
+        logger.warn(
+          { productId: opts.productId, idx, status: res?.status, url: imageUrl.slice(0, 100) },
+          '[MinIOCache] multi: download failed',
+        );
+        return null;
+      }
+      const mimetype = res.headers.get('content-type') ?? 'image/jpeg';
+      if (!mimetype.startsWith('image/')) return null;
+      const buffer = Buffer.from(await res.arrayBuffer());
+      if (buffer.length > 10 * 1024 * 1024) return null;
+
+      const ext = mimetype.split('/')[1]?.split(';')[0] ?? 'jpg';
+      const key = buildProductImageKey(opts.productId, ext === 'jpeg' ? 'jpg' : ext, idx);
+
+      await getS3().send(
+        new PutObjectCommand({
+          Bucket: MINIO_BUCKET,
+          Key: key,
+          Body: buffer,
+          ContentType: mimetype,
+          CacheControl: 'public, max-age=31536000, immutable',
+        }),
+      );
+      return { key, idx, bytes: buffer.length, mimetype };
+    } catch (err) {
+      logger.warn(
+        { productId: opts.productId, idx, err: (err as Error).message },
+        '[MinIOCache] multi: upload failed',
+      );
+      return null;
+    }
+  });
+  return Promise.all(tasks);
 }
 
 export interface MinioCacheBatchResult {

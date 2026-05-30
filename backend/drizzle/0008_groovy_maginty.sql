@@ -1,0 +1,1 @@
+ALTER TABLE "produtos_catalogo" ADD COLUMN "imagens_minio" jsonb DEFAULT '[]'::jsonb;

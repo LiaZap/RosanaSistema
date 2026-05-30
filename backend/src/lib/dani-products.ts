@@ -33,9 +33,10 @@ export interface ProductSearchResult {
   disponivel: boolean;
   marca: string | null;
   categoria: string | null;
-  imagem: string | null; // cloudinary OR bling fallback
+  imagem: string | null; // primeira imagem - retro-compat
+  imagens: string[]; // todas as imagens FULL do Bling (max 5)
   descricaoCurta: string | null;
-  stockSource?: 'realtime' | 'cache'; // de onde veio o estoque
+  stockSource?: 'realtime' | 'cache';
 }
 
 function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult {
@@ -43,17 +44,19 @@ function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult 
   // MinIO retorna URL relativa /media/file/:id - frontend monta absoluta.
   // Sempre que o produto tem imagemBling, o endpoint /media/file/:id funciona
   // (faz lazy upload se MinIO ainda nao tem cache).
-  let imagem: string | null = null;
-  if (row.imagemCloudinary) {
-    imagem = row.imagemCloudinary;
+  // Monta lista de URLs (preferindo cache, fallback Bling lazy)
+  let imagens: string[] = [];
+  if (Array.isArray(row.imagensMinio) && row.imagensMinio.length > 0) {
+    imagens = row.imagensMinio;
+  } else if (row.imagemCloudinary) {
+    imagens = [row.imagemCloudinary];
   } else if (row.imagemMinio) {
-    imagem = row.imagemMinio;
+    imagens = [row.imagemMinio];
   } else if (row.imagemBling || row.blingId) {
-    // Mesmo sem imagemBling salvo, se tem blingId podemos buscar via
-    // GET /produtos/{id} -> midia.imagens.internas[].link
-    // O endpoint /media/file/:id faz isso lazy.
-    imagem = `/media/file/${row.id}`;
+    // Lazy: /media/file/:id baixa todas e popula imagensMinio
+    imagens = [`/media/file/${row.id}`];
   }
+  const imagem: string | null = imagens[0] ?? null;
 
   return {
     id: row.id,
@@ -67,6 +70,7 @@ function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult 
     marca: row.marca,
     categoria: row.categoria,
     imagem,
+    imagens,
     descricaoCurta: row.descricaoCurta,
     stockSource: 'cache',
   };

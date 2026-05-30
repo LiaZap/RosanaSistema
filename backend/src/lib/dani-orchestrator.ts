@@ -279,21 +279,18 @@ export async function processDaniMessage(
       if (consulta) {
         try {
           const produto = await buscarProdutoDetalhe({ accountId: ctx.accountId, consulta });
-          if (produto?.imagem) {
-            attachments.push({
-              type: 'image',
-              url: produto.imagem,
-            });
-            logger.info(
-              { consulta, imagem: produto.imagem.slice(0, 150), bling: produto.blingId },
-              '[DANI] image attachment from product',
-            );
-          } else {
-            logger.info(
-              { consulta, found: !!produto, hasBlingImg: !!produto?.imagem },
-              '[DANI] product found but no image',
-            );
+          // Manda TODAS as imagens FULL conforme cadastradas no Bling (max 5).
+          // imagens[] vem do mapRow - cada item eh /media/file/:id/:idx
+          const imgs = produto?.imagens && produto.imagens.length > 0
+            ? produto.imagens
+            : (produto?.imagem ? [produto.imagem] : []);
+          for (const url of imgs) {
+            attachments.push({ type: 'image', url });
           }
+          logger.info(
+            { consulta, count: imgs.length, bling: produto?.blingId },
+            '[DANI] image attachments from product',
+          );
         } catch (err) {
           logger.warn({ err: (err as Error).message }, '[DANI] product detail failed');
         }

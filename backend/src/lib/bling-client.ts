@@ -294,10 +294,12 @@ export async function fetchFreshProductImageUrl(opts: {
   const byOrdem = (a: { ordem?: number }, b: { ordem?: number }) =>
     (a.ordem ?? 999) - (b.ordem ?? 999);
 
+  void byOrdem; // mantido pra retro-compat com fetchFreshProductImages
+
   // 1. Externas - imagem principal por ordem
   const externas = (json.data?.midia?.imagens?.externas ?? [])
     .filter((e) => e.link)
-    .sort(byOrdem);
+    .sort((a, b) => (a.ordem ?? 999) - (b.ordem ?? 999));
   if (externas[0]?.link) {
     logger.debug(
       { blingId: opts.blingId, source: 'externa', ordem: externas[0].ordem },
@@ -342,6 +344,71 @@ export async function fetchFreshProductImageUrl(opts: {
 
   logger.info({ blingId: opts.blingId }, '[Bling] no image URL found in product');
   return null;
+}
+
+/**
+ * Pega TODAS as URLs FULL de um produto do Bling, ordenadas pela ordem
+ * que o lojista cadastrou. Filtra miniaturas. Limite 5 imagens.
+ *
+ * Retorna array vazio se nao tiver imagens.
+ */
+export async function fetchFreshProductImages(opts: {
+  accessToken: string;
+  blingId: string;
+}): Promise<string[]> {
+  const url = `${BLING_API_BASE}/produtos/${opts.blingId}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${opts.accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+  if (!res.ok) return [];
+
+  const json = (await res.json()) as {
+    data?: {
+      imagemURL?: string;
+      midia?: {
+        imagens?: {
+          externas?: Array<{ link?: string; ordem?: number }>;
+          internas?: Array<{
+            link?: string;
+            linkMiniatura?: string;
+            validade?: string;
+            ordem?: number;
+          }>;
+        };
+      };
+    };
+  };
+
+  const now = Date.now();
+  const validadeOk = (validade?: string) => {
+    if (!validade) return true;
+    const expira = Date.parse(validade);
+    return Number.isFinite(expira) ? expira > now : true;
+  };
+  const byOrdem = (a: { ordem?: number }, b: { ordem?: number }) =>
+    (a.ordem ?? 999) - (b.ordem ?? 999);
+
+  const urls: string[] = [];
+
+  // Externas FULL
+  for (const e of (json.data?.midia?.imagens?.externas ?? []).sort(byOrdem)) {
+    if (e.link) urls.push(e.link);
+  }
+
+  // Internas FULL (filtra por validade)
+  for (const i of (json.data?.midia?.imagens?.internas ?? []).sort(byOrdem)) {
+    if (i.link && validadeOk(i.validade)) urls.push(i.link);
+  }
+
+  // Legacy fallback
+  if (urls.length === 0 && json.data?.imagemURL) {
+    urls.push(json.data.imagemURL);
+  }
+
+  return urls.slice(0, 5); // max 5
 }
 
 /**

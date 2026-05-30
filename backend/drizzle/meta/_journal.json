@@ -57,6 +57,13 @@
       "when": 1780108032352,
       "tag": "0007_dear_karen_page",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780145463259,
+      "tag": "0008_groovy_maginty",
+      "breakpoints": true
     }
   ]
 }

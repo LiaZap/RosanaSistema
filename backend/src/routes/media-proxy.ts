@@ -5,7 +5,6 @@ import { produtosCatalogo } from '../db/schema.js';
 import {
   buildProductImageKey,
   streamProductImage,
-  uploadImageFromUrl,
 } from '../lib/minio-cache.js';
 import { logger } from '../lib/logger.js';
 
@@ -113,17 +112,19 @@ media.get('/proxy', async (c) => {
   }
 });
 
-// ── GET /media/file/:productId ──────────────────────
-// Serve imagem do MinIO. Se nao tem ainda, faz upload lazy.
-// Try/catch global pra ter mensagem clara em vez de 502 generico.
-media.get('/file/:productId', async (c) => {
+// ── GET /media/file/:productId/:idx? ────────────────
+// Serve imagem do MinIO. idx 0 = principal, 1+ = adicionais.
+// Se nao tem ainda, faz upload lazy de TODAS as imagens do produto.
+media.get('/file/:productId/:idx?', async (c) => {
   const productId = c.req.param('productId');
+  const idxParam = c.req.param('idx');
+  const idx = idxParam ? Math.max(0, parseInt(idxParam, 10) || 0) : 0;
 
   try {
-    // Tenta servir do MinIO direto
+    // Tenta servir do MinIO direto (key especifica de idx)
     for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
       try {
-        const key = buildProductImageKey(productId, ext);
+        const key = buildProductImageKey(productId, ext, idx);
         const obj = await streamProductImage(key);
         if (obj?.body) {
           const buffer = await streamToBuffer(obj.body);
@@ -133,7 +134,7 @@ media.get('/file/:productId', async (c) => {
         }
       } catch (err) {
         logger.warn(
-          { ext, productId, err: (err as Error).message },
+          { ext, productId, idx, err: (err as Error).message },
           '[MediaProxy] error checking MinIO',
         );
       }
@@ -149,81 +150,71 @@ media.get('/file/:productId', async (c) => {
       return c.text('product not found', 404);
     }
 
-    // Sem imagemBling salvo? Tenta resolver via GET detail no Bling.
-    let imageUrl = product.imagemBling;
-    if (!imageUrl && product.blingId) {
-      try {
-        const { getValidAccessToken, fetchFreshProductImageUrl } = await import(
-          '../lib/bling-client.js'
-        );
-        const token = await getValidAccessToken(product.accountId);
-        if (token) {
-          imageUrl = await fetchFreshProductImageUrl({
-            accessToken: token,
-            blingId: product.blingId,
-          });
-          if (imageUrl) {
-            // Atualiza no banco pra proxima vez
-            await db
-              .update(produtosCatalogo)
-              .set({ imagemBling: imageUrl, updatedAt: new Date() })
-              .where(eq(produtosCatalogo.id, productId));
-          }
-        }
-      } catch (err) {
-        logger.warn({ err: (err as Error).message }, '[MediaProxy] fresh resolve failed');
-      }
+    // Sem MinIO cached pra esse idx? Busca TODAS as imagens do Bling
+    // e salva todas (uploadMultipleImages). Resolve idx solicitado.
+    if (!product.blingId) {
+      return c.text('product has no blingId', 404);
     }
 
-    if (!imageUrl) {
+    let allUrls: string[] = [];
+    try {
+      const { getValidAccessToken, fetchFreshProductImages } = await import(
+        '../lib/bling-client.js'
+      );
+      const token = await getValidAccessToken(product.accountId);
+      if (token) {
+        allUrls = await fetchFreshProductImages({
+          accessToken: token,
+          blingId: product.blingId,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, '[MediaProxy] fetchFreshProductImages failed');
+    }
+
+    if (allUrls.length === 0) {
+      // Fallback: tenta usar imagemBling salvo (campo legacy)
+      if (product.imagemBling) allUrls = [product.imagemBling];
+    }
+
+    if (allUrls.length === 0) {
       logger.info({ productId, blingId: product.blingId }, '[MediaProxy] no image URL');
       return c.text('image not found', 404);
     }
 
     logger.info(
-      { productId, blingId: product.blingId, accountId: product.accountId },
-      '[MediaProxy] lazy uploading to MinIO',
+      { productId, blingId: product.blingId, count: allUrls.length, idx },
+      '[MediaProxy] lazy uploading all images',
     );
 
-    const result = await uploadImageFromUrl({
+    const { uploadMultipleImages } = await import('../lib/minio-cache.js');
+    const results = await uploadMultipleImages({
       productId,
-      imageUrl,
+      imageUrls: allUrls,
       accountId: product.accountId,
-      blingId: product.blingId,
     });
-    if (!result) {
-      logger.warn({ productId }, '[MediaProxy] upload returned null - redirecting to source');
-      // Fallback: busca URL fresca do Bling e redirect 302
-      try {
-        const { getValidAccessToken, fetchFreshProductImageUrl } = await import('../lib/bling-client.js');
-        if (product.blingId) {
-          const token = await getValidAccessToken(product.accountId);
-          if (token) {
-            const fresh = await fetchFreshProductImageUrl({
-              accessToken: token,
-              blingId: product.blingId,
-            });
-            if (fresh) {
-              return c.redirect(fresh, 302);
-            }
-          }
-        }
-      } catch (err) {
-        logger.warn({ err: (err as Error).message }, '[MediaProxy] fresh URL fetch failed');
-      }
-      // 404 em vez de 502: EasyPanel/Traefik intercepta 5xx com page HTML.
-      return c.text('source image unavailable', 404);
-    }
+    const successUrls = results
+      .map((r, i) => (r ? `/media/file/${productId}/${i}` : null))
+      .filter((u): u is string => !!u);
 
-    // Atualiza row
+    // Atualiza imagensMinio (array) + imagemBling (compat)
     await db
       .update(produtosCatalogo)
       .set({
-        imagemMinio: `/media/file/${productId}`,
+        imagensMinio: successUrls,
+        imagemBling: allUrls[0],
+        imagemMinio: successUrls[0] ?? null,
         minioUploadedAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(produtosCatalogo.id, productId));
+
+    // Stream o idx solicitado
+    const result = results[idx] ?? results[0];
+    if (!result) {
+      logger.warn({ productId, idx }, '[MediaProxy] upload returned null');
+      return c.text('source image unavailable', 404);
+    }
 
     // Refetch e stream
     const refetched = await streamProductImage(result.key);
@@ -258,28 +249,31 @@ media.post('/refresh/:productId', async (c) => {
       return c.json(out, 404);
     }
 
-    // Tenta apagar do MinIO todas extensões possíveis
+    // Tenta apagar do MinIO todas extensões + idx 0..4
     const { getS3 } = await import('../lib/minio-cache.js');
     const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
     const bucket = process.env.MINIO_BUCKET || 'fce-media';
     const deleted: string[] = [];
-    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
-      const key = buildProductImageKey(productId, ext);
-      try {
-        await getS3().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
-        deleted.push(key);
-      } catch {
-        // 404 no MinIO, ignora
+    for (let idx = 0; idx < 5; idx++) {
+      for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+        const key = buildProductImageKey(productId, ext, idx);
+        try {
+          await getS3().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+          deleted.push(key);
+        } catch {
+          // 404 no MinIO, ignora
+        }
       }
     }
     out.minioDeleted = deleted;
 
-    // Zera imagemBling + imagemMinio no banco
+    // Zera campos no banco
     await db
       .update(produtosCatalogo)
       .set({
         imagemBling: null,
         imagemMinio: null,
+        imagensMinio: [],
         minioUploadedAt: null,
         updatedAt: new Date(),
       })
