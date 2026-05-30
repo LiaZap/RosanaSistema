@@ -213,6 +213,78 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/bling-health/:productId ──────────────
+// Debug: forca refresh do token limpando cooldown e mostra resultado.
+// NAO expoe tokens completos - so booleans e status codes.
+media.get('/bling-health/:productId', async (c) => {
+  const productId = c.req.param('productId');
+  const out: Record<string, unknown> = { productId };
+  try {
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+    if (!product?.blingId || !product.accountId) {
+      out.error = 'product missing';
+      return c.json(out, 404);
+    }
+
+    const { blingCredentials } = await import('../db/schema.js');
+    const { getRedis } = await import('../lib/queues.js');
+    const { refreshTokens } = await import('../lib/bling-client.js');
+
+    // Limpa cooldowns
+    const redis = getRedis();
+    const okKey = `fce:bling:refresh:ok:${product.accountId}`;
+    const failKey = `fce:bling:refresh:fail:${product.accountId}`;
+    await Promise.all([redis.del(okKey), redis.del(failKey)]);
+    out.cooldownsCleared = true;
+
+    // Pega credentials
+    const cred = await db.query.blingCredentials.findFirst({
+      where: eq(blingCredentials.accountId, product.accountId),
+    });
+    out.hasCredentials = !!cred;
+    out.hasClientId = !!cred?.clientId;
+    out.hasRefreshToken = !!cred?.refreshToken;
+    out.tokenExpiresAt = cred?.expiresAt;
+    out.expired = cred?.expiresAt ? cred.expiresAt.getTime() < Date.now() : null;
+
+    if (!cred?.clientId || !cred.clientSecret || !cred.refreshToken) {
+      out.error = 'incomplete credentials - need reconnect';
+      return c.json(out);
+    }
+
+    // Tenta refresh forcado
+    try {
+      const tokens = await refreshTokens({
+        clientId: cred.clientId,
+        clientSecret: cred.clientSecret,
+        refreshToken: cred.refreshToken,
+      });
+      const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+      await db
+        .update(blingCredentials)
+        .set({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt: newExpiresAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(blingCredentials.accountId, product.accountId));
+      out.refreshOk = true;
+      out.newExpiresAt = newExpiresAt;
+    } catch (err) {
+      out.refreshOk = false;
+      out.refreshError = (err as Error).message.slice(0, 300);
+    }
+
+    return c.json(out);
+  } catch (err) {
+    out.error = (err as Error).message;
+    return c.json(out, 404);
+  }
+});
+
 // ── GET /media/file/:productId/bling-raw ────────────
 // Pega resposta crua do Bling pra debug
 media.get('/file/:productId/bling-raw', async (c) => {
