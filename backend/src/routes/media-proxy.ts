@@ -213,6 +213,38 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/bling-token-test ──────────────────────
+// Testa POST direto ao /oauth/token (espera 400/401, NAO 429)
+media.get('/bling-token-test', async (c) => {
+  const out: Record<string, unknown> = {};
+  const HEADERS = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    Accept: '1.0',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Authorization: 'Basic ZmFrZTpmYWtl', // fake:fake
+  };
+  for (const host of ['api.bling.com.br', 'www.bling.com.br']) {
+    try {
+      const r = await fetch(`https://${host}/Api/v3/oauth/token`, {
+        method: 'POST',
+        headers: HEADERS,
+        body: 'grant_type=refresh_token&refresh_token=fake',
+      });
+      const text = await r.text();
+      out[host] = {
+        status: r.status,
+        body: text.slice(0, 200),
+        cfRay: r.headers.get('cf-ray'),
+        server: r.headers.get('server'),
+      };
+    } catch (err) {
+      out[host] = { err: (err as Error).message };
+    }
+  }
+  return c.json(out);
+});
+
 // ── GET /media/outbound-ip ───────────────────────────
 // Debug: descobre IP de saida do servidor pra Cloudflare
 media.get('/outbound-ip', async (c) => {
