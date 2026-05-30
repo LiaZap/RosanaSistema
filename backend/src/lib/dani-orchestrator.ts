@@ -242,6 +242,21 @@ export async function processDaniMessage(
     );
   }
 
+  // Alerta quando DANI usa muitas iteracoes (loop de tool calls)
+  if (generation.iterations >= 4) {
+    logger.warn(
+      {
+        iterations: generation.iterations,
+        toolCalls: generation.toolCalls.map((tc) => ({
+          name: tc.name,
+          args: tc.args,
+        })),
+        userMsg: message.slice(0, 100),
+      },
+      '[DANI] high iterations - possible tool loop',
+    );
+  }
+
   // Strip filler do message extraido
   const { clean, stripped } = stripFillerPrefix(parsed.message);
 
@@ -254,10 +269,15 @@ export async function processDaniMessage(
 
   // Detecta despedida/agradecimento pra forcar silencio absoluto
   // (mesmo que o modelo gere texto generico, nao envia)
+  // Aceita "tchau, ate mais" / "obrigada, depois eu volto" etc.
   const userMsgNorm = message.toLowerCase().trim();
-  const isFarewell = /^(tchau|obrigad[oa]|valeu|brigad[oa]|ate logo|ate mais|ate amanha|boa noite|fui|flw|vlw|ok obrigad[oa]|nao precisa|nao quero|deixa pra la|deixa quieto)[.!\s]*$/i.test(
-    userMsgNorm,
-  );
+  // Match no INICIO ou MSG INTEIRA contendo palavra-chave de despedida
+  const FAREWELL_KEYWORDS =
+    /(^|\b)(tchau|obrigad[oa]|brigad[oa]|valeu|vlw|flw|fui|ate logo|ate mais|ate amanha|ate depois|obg|tmj|deixa pra la|deixa quieto)(\b|[!.,?]|$)/i;
+  const isFarewell =
+    FAREWELL_KEYWORDS.test(userMsgNorm) &&
+    userMsgNorm.length < 80 && // msg curta sem pergunta no meio
+    !/\?/.test(userMsgNorm); // sem pergunta = nao quer info, so despedida
 
   // Final reply respeitando should_reply do JSON
   let finalReply = '';
