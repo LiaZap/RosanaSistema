@@ -432,7 +432,7 @@ async function applyDecision(
           conversationId: ctx.conversationId,
         },
         {
-          jobId: `followup-send:${ctx.conversationId}:${transitioned[0].attempts}`,
+          jobId: `followup-send_${ctx.conversationId}_${transitioned[0].attempts}`,
         },
       );
 

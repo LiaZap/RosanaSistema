@@ -208,7 +208,7 @@ async function processInbound(data: InboundJobData): Promise<void> {
     } satisfies AiReplyJobData,
     {
       delay: windowMs,
-      jobId: `ai:${buf.windowId}`, // mesmo windowId = mesmo job (idempotente)
+      jobId: `ai_${buf.windowId}`, // mesmo windowId = mesmo job (idempotente)
       removeOnComplete: { age: 3600, count: 200 },
     },
   );
@@ -285,7 +285,7 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
       data,
       {
         delay: decision.remainingMs,
-        jobId: `ai:${bufferWindowId}:retry:${Date.now()}`,
+        jobId: `ai_${bufferWindowId}_retry_${Date.now()}`,
       },
     );
     return;

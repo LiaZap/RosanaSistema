@@ -224,7 +224,8 @@ export async function handleMessageUpsert(
       mediaPayload,
     },
     {
-      jobId: data.key.id ? `inbound:${data.key.id}` : undefined,
+      // BullMQ proibe ':' em custom job IDs - sanitizamos
+      jobId: data.key.id ? `inbound_${data.key.id.replace(/:/g, '_')}` : undefined,
       removeOnComplete: { age: 3600 },
     },
   );
