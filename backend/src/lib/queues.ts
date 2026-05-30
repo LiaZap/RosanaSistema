@@ -46,6 +46,13 @@ export interface InboundJobData {
   phoneNumber: string;
   text: string;
   whatsappMessageId?: string;
+  // Sprint 3: mediaPayload pra worker processar Vision (preserva ordem do buffer)
+  mediaPayload?: {
+    messageKey: { id: string; remoteJid: string; fromMe: boolean };
+    instanceName: string;
+    mimetype?: string;
+    caption?: string;
+  };
 }
 
 export interface AiReplyJobData {

@@ -30,7 +30,17 @@ import {
 } from './evolution-client.js';
 import { transformedUrl } from './cloudinary-client.js';
 import { classifyConversation } from './intent-classifier.js';
+import { fetchMessageMediaBase64 } from './evolution-media.js';
+import { classifyImage } from './gemini-vision.js';
 import { logger } from './logger.js';
+
+/** Corrobora comprovante via keywords no caption */
+function captionSuggestsPayment(caption?: string): boolean {
+  if (!caption) return false;
+  return /\b(pix|comprovante|transferencia|transferência|deposito|depósito|pagamento|recibo|boleto)\b/i.test(
+    caption,
+  );
+}
 
 /**
  * Sprint 1: BullMQ workers rodando dentro do processo backend.
@@ -52,7 +62,76 @@ let started = false;
  * Agenda um ai-reply delayed pra processar quando o silencio acabar.
  */
 async function processInbound(data: InboundJobData): Promise<void> {
-  const { accountId, conversationId, contactId, phoneNumber, text, whatsappMessageId } = data;
+  const { accountId, conversationId, contactId, phoneNumber, whatsappMessageId, mediaPayload } = data;
+  let { text } = data;
+  void contactId; // available for future use
+  void phoneNumber;
+
+  // Sprint 3: se veio mediaPayload, faz Vision aqui (no worker, async).
+  // Anti-race: como o worker processa jobs sequencialmente por conversation
+  // (idempotency jobId 'inbound:{messageId}'), a ordem das mensagens eh preservada.
+  let messageType: 'text' | 'image' | 'document' = 'text';
+  let skipBuffer = false;
+
+  if (mediaPayload) {
+    try {
+      const media = await fetchMessageMediaBase64({
+        accountId,
+        instanceName: mediaPayload.instanceName,
+        messageKey: mediaPayload.messageKey,
+      });
+      if (media) {
+        const vision = await classifyImage({
+          accountId,
+          base64: media.base64,
+          mimetype: media.mimetype,
+          caption: mediaPayload.caption,
+        });
+
+        messageType = media.mimetype.startsWith('image/') ? 'image' : 'document';
+
+        if (vision) {
+          // Threshold rigoroso: 80% + corroborante por keyword no caption
+          const isComprovante =
+            vision.intent === 'comprovante' &&
+            (vision.confianca >= 80 ||
+              (vision.confianca >= 60 && captionSuggestsPayment(mediaPayload.caption)));
+
+          if (isComprovante) {
+            text = mediaPayload.caption
+              ? `[Comprovante de pagamento] ${mediaPayload.caption}`
+              : '[Comprovante de pagamento]';
+            skipBuffer = true; // SILENCIO absoluto - nao vai pro buffer
+            logger.info(
+              { conversationId, confianca: vision.confianca },
+              '[Inbound] comprovante detectado - silencio absoluto',
+            );
+          } else if (vision.intent === 'produto' && vision.termos_busca.length > 0) {
+            const termos = vision.termos_busca.join(', ');
+            text = text
+              ? `${text}\n\n[Cliente mandou foto. Descricao: ${vision.descricao}. Termos pra busca: ${termos}]`
+              : `[Cliente mandou foto de produto. Descricao: ${vision.descricao}. Termos pra busca: ${termos}]`;
+          } else {
+            text = text
+              ? `${text}\n\n[Cliente mandou imagem: ${vision.descricao}]`
+              : `[Cliente mandou imagem (${vision.intent}): ${vision.descricao}]`;
+          }
+        } else if (!text) {
+          // Vision retornou null + sem caption = vai uma msg generica
+          text = '[Cliente mandou uma imagem - nao foi possivel classificar]';
+        }
+      } else {
+        // Media fetch falhou
+        if (!text) text = '[Cliente mandou uma imagem]';
+      }
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message, conversationId },
+        '[Inbound] Vision processing failed',
+      );
+      if (!text) text = '[Cliente mandou uma imagem]';
+    }
+  }
 
   // 1. Persiste user message
   const [saved] = await db
@@ -61,7 +140,7 @@ async function processInbound(data: InboundJobData): Promise<void> {
       conversationId,
       accountId,
       fromType: 'user',
-      messageType: 'text',
+      messageType,
       content: text,
       whatsappMessageId,
     })
@@ -72,6 +151,11 @@ async function processInbound(data: InboundJobData): Promise<void> {
     .update(conversations)
     .set({ lastMessageAt: new Date(), updatedAt: new Date() })
     .where(eq(conversations.id, conversationId));
+
+  // Vision detectou comprovante: skip buffer (silencio absoluto)
+  if (skipBuffer) {
+    return;
+  }
 
   // 3. Carrega settings da DANI (pra pegar windowMs)
   const settings = await db.query.ninaSettings.findFirst({

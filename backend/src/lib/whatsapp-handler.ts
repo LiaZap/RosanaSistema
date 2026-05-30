@@ -1,10 +1,10 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { contacts, conversations } from '../db/schema.js';
+import { contacts, conversations, whatsappSessions } from '../db/schema.js';
 import { saveMessage } from './dani-conversations.js';
 import { upsertSessionStatus } from './evolution-client.js';
 import { resetFollowupOnUserReply } from './followup-agent.js';
-import { inboundQueue } from './queues.js';
+import { inboundQueue, type InboundJobData } from './queues.js';
 import { logger } from './logger.js';
 
 /**
@@ -32,11 +32,32 @@ export interface EvolutionMessageEvent {
     message?: {
       conversation?: string;
       extendedTextMessage?: { text?: string };
-      imageMessage?: { caption?: string };
+      imageMessage?: { caption?: string; mimetype?: string };
+      documentMessage?: { caption?: string; mimetype?: string };
     };
     pushName?: string;
     messageType?: string;
   };
+}
+
+function isImage(data: EvolutionMessageEvent['data']): boolean {
+  return !!data?.message?.imageMessage;
+}
+
+function isPdfDocument(data: EvolutionMessageEvent['data']): boolean {
+  const mt = data?.message?.documentMessage?.mimetype ?? '';
+  return mt === 'application/pdf';
+}
+
+function getMediaMimetype(data: EvolutionMessageEvent['data']): string | undefined {
+  return (
+    data?.message?.imageMessage?.mimetype ??
+    data?.message?.documentMessage?.mimetype
+  );
+}
+
+function getMediaCaption(data: EvolutionMessageEvent['data']): string | undefined {
+  return data?.message?.imageMessage?.caption ?? data?.message?.documentMessage?.caption;
 }
 
 export interface ConnectionUpdateEvent {
@@ -91,8 +112,13 @@ export async function handleMessageUpsert(
     return { skipped: 'group' };
   }
 
-  const text = extractText(data);
-  if (!text || text.trim().length === 0) {
+  const rawText = extractText(data);
+  const hasImage = isImage(data);
+  const hasPdf = isPdfDocument(data);
+  const hasMedia = hasImage || hasPdf;
+
+  // Sem texto e sem media -> nada pra processar
+  if (!hasMedia && (!rawText || rawText.trim().length === 0)) {
     return { skipped: 'no text content' };
   }
 
@@ -143,9 +169,8 @@ export async function handleMessageUpsert(
     conv = created;
   }
 
-  // Cliente respondeu - se follow-up tinha sido enviado, reseta state.
-  // Passa msg pra decidir se zera attempts (so substantiva, >20 chars).
-  await resetFollowupOnUserReply(conv.id, text).catch((err) =>
+  // Cliente respondeu - reseta follow-up state (text bruto pra decidir substantivo)
+  await resetFollowupOnUserReply(conv.id, rawText ?? '').catch((err) =>
     logger.warn({ err: (err as Error).message }, '[WhatsApp] resetFollowup failed'),
   );
 
@@ -155,13 +180,38 @@ export async function handleMessageUpsert(
       conversationId: conv.id,
       accountId,
       fromType: 'user',
-      content: text,
+      content: rawText ?? (hasMedia ? '[Cliente enviou mídia]' : ''),
     });
     return { skipped: `status=${conv.status}`, contactId: contact.id, conversationId: conv.id };
   }
 
-  // Sprint 1: enfileira em vez de processar inline.
-  // Worker INBOUND persiste msg + buffer push + schedule ai-reply.
+  // Sprint 3: se veio mídia, prepara payload pro worker fazer Vision async.
+  // ISSO preserva a ordem do buffer: worker processa sequencialmente.
+  // Tambem evita estourar timeout do Evolution webhook (que tem ~30s).
+  let mediaPayload: InboundJobData['mediaPayload'] | undefined;
+  if (hasMedia && data.key.id && data.key.remoteJid) {
+    try {
+      const session = await db.query.whatsappSessions.findFirst({
+        where: eq(whatsappSessions.accountId, accountId),
+      });
+      if (session) {
+        mediaPayload = {
+          messageKey: {
+            id: data.key.id,
+            remoteJid: data.key.remoteJid,
+            fromMe: data.key.fromMe ?? false,
+          },
+          instanceName: session.instanceName,
+          mimetype: getMediaMimetype(data),
+          caption: getMediaCaption(data) ?? rawText ?? undefined,
+        };
+      }
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, '[WhatsApp] failed to attach mediaPayload');
+    }
+  }
+
+  // Enfileira: worker faz Vision (se mediaPayload) + persist + buffer push.
   await inboundQueue.add(
     'persist',
     {
@@ -169,11 +219,12 @@ export async function handleMessageUpsert(
       conversationId: conv.id,
       contactId: contact.id,
       phoneNumber: phone,
-      text,
+      text: rawText ?? '', // worker enriquece se houver mediaPayload
       whatsappMessageId: data.key.id,
+      mediaPayload,
     },
     {
-      jobId: data.key.id ? `inbound:${data.key.id}` : undefined, // idempotente
+      jobId: data.key.id ? `inbound:${data.key.id}` : undefined,
       removeOnComplete: { age: 3600 },
     },
   );
