@@ -242,7 +242,17 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
     return;
   }
 
-  // 9. Salva resposta da DANI no banco
+  // 9. Se DANI decidiu nao responder (silencio absoluto: comprovante,
+  // despedida, etc), so loga o reasoning e NAO envia nem salva.
+  if (!result.shouldReply) {
+    logger.info(
+      { conversationId, reasoning: result.reasoning, modelMode: result.modelUsed },
+      '[AiReply] silencio absoluto (should_reply=false)',
+    );
+    return;
+  }
+
+  // 10. Salva resposta da DANI no banco
   await saveMessage({
     conversationId,
     accountId,
@@ -251,7 +261,7 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
     processedByNina: true,
   });
 
-  // 10. Enfileira outbound (text ou media)
+  // 11. Enfileira outbound (text ou media)
   const firstImage = result.attachments.find((a) => a.type === 'image');
   if (firstImage && firstImage.url.includes('res.cloudinary.com')) {
     await outboundQueue.add('send', {

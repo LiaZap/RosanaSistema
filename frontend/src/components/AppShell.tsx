@@ -76,6 +76,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'DANI',
     items: [
       { to: '/agent', label: 'Configuracao', icon: I.agent },
+      { to: '/knowledge', label: 'Base de conhecimento', icon: I.dashboard },
       { to: '/dani', label: 'Teste de chat', icon: I.testTube },
     ],
   },

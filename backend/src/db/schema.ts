@@ -288,6 +288,25 @@ export const blingCredentials = pgTable('bling_credentials', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ── Knowledge Base (RAG) ─────────────────────────────
+// Categorias preset que o prompt LEAN sabe carregar conforme contexto.
+export const knowledgeBase = pgTable('knowledge_base', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  category: varchar('category', { length: 50 }).notNull(),
+  title: varchar('title', { length: 255 }).notNull(),
+  content: text('content').notNull(),
+  tags: jsonb('tags').$type<string[]>().default([]),
+  priority: integer('priority').default(50).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+  alwaysInclude: boolean('always_include').default(false).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  accountCategoryIdx: index('kb_account_category_idx').on(t.accountId, t.category),
+  accountActiveIdx: index('kb_account_active_idx').on(t.accountId, t.isActive),
+}));
+
 export const cloudinaryCredentials = pgTable('cloudinary_credentials', {
   id: uuid('id').primaryKey().defaultRandom(),
   accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }).unique(),
@@ -437,6 +456,10 @@ export const blingCredentialsRelations = relations(blingCredentials, ({ one }) =
 
 export const cloudinaryCredentialsRelations = relations(cloudinaryCredentials, ({ one }) => ({
   account: one(accounts, { fields: [cloudinaryCredentials.accountId], references: [accounts.id] }),
+}));
+
+export const knowledgeBaseRelations = relations(knowledgeBase, ({ one }) => ({
+  account: one(accounts, { fields: [knowledgeBase.accountId], references: [accounts.id] }),
 }));
 
 export const mediaLibraryRelations = relations(mediaLibrary, ({ one }) => ({

@@ -10,6 +10,7 @@ import CloudinaryPage from './pages/Cloudinary';
 import PipelinePage from './pages/Pipeline';
 import AppointmentsPage from './pages/Appointments';
 import AgentSettingsPage from './pages/AgentSettings';
+import KnowledgePage from './pages/Knowledge';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/dani" element={<DaniTestPage />} />
         <Route path="/agent" element={<AgentSettingsPage />} />
+        <Route path="/knowledge" element={<KnowledgePage />} />
         <Route path="/bling" element={<BlingPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="/conversations" element={<ConversationsPage />} />

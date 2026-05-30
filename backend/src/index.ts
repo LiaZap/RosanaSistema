@@ -17,6 +17,7 @@ import cloudinaryRoutes from './routes/cloudinary.js';
 import pipelineRoutes from './routes/pipeline.js';
 import appointmentRoutes from './routes/appointments.js';
 import cronRoutes from './routes/cron.js';
+import knowledgeRoutes from './routes/knowledge.js';
 
 const app = new Hono();
 
@@ -43,6 +44,7 @@ app.route('/cloudinary', cloudinaryRoutes);
 app.route('/pipeline', pipelineRoutes);
 app.route('/appointments', appointmentRoutes);
 app.route('/cron', cronRoutes);
+app.route('/knowledge', knowledgeRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────

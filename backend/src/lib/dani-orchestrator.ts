@@ -9,6 +9,7 @@ import {
 } from './gemini-client.js';
 import { DANI_TOOLS, TOOL_HANDLERS } from './dani-tools.js';
 import { buscarProdutoDetalhe } from './dani-products.js';
+import { loadContextualKB } from './knowledge-base.js';
 import { logger } from './logger.js';
 
 export interface DaniAttachment {
@@ -50,12 +51,53 @@ export interface DaniContext {
 
 export interface DaniResult {
   reply: string;
+  shouldReply: boolean;
+  reasoning: string;
   modelUsed: string;
   durationMs: number;
   fillerStripped: boolean;
   toolCalls: ToolCallRecord[];
   iterations: number;
   attachments: DaniAttachment[];
+}
+
+/**
+ * Parseia a resposta esperando JSON { should_reply, message, reasoning }.
+ * Fallback se a IA nao seguiu o schema: trata como texto puro com should_reply=true.
+ */
+function parseJsonResponse(raw: string): {
+  shouldReply: boolean;
+  message: string;
+  reasoning: string;
+  fellBack: boolean;
+} {
+  const trimmed = raw.trim();
+
+  // Tenta extrair JSON entre ```json ... ``` se vier em markdown
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const jsonCandidate = fenced ? fenced[1].trim() : trimmed;
+
+  try {
+    const obj = JSON.parse(jsonCandidate);
+    if (typeof obj === 'object' && obj !== null && 'should_reply' in obj) {
+      return {
+        shouldReply: Boolean(obj.should_reply),
+        message: typeof obj.message === 'string' ? obj.message : '',
+        reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : '',
+        fellBack: false,
+      };
+    }
+  } catch {
+    // ignore
+  }
+
+  // Fallback: texto puro
+  return {
+    shouldReply: trimmed.length > 0,
+    message: trimmed,
+    reasoning: 'fallback: response was not valid JSON',
+    fellBack: true,
+  };
 }
 
 /**
@@ -77,11 +119,28 @@ export async function processDaniMessage(
     throw new Error('DANI is disabled for this account');
   }
 
+  // Carrega chunks da KB contextualmente
+  const kbChunks = await loadContextualKB({
+    accountId: ctx.accountId,
+    userMessage: message,
+    maxChunks: 25,
+  });
+
   const systemPrompt = buildDaniSystemPrompt({
     systemPromptOverride: settings?.systemPromptOverride ?? null,
     sdrName: settings?.sdrName ?? null,
     companyName: settings?.companyName ?? null,
+    kbChunks,
   });
+
+  logger.info(
+    {
+      accountId: ctx.accountId,
+      systemPromptChars: systemPrompt.length,
+      kbChunks: kbChunks.length,
+    },
+    '[DANI] system prompt built with KB',
+  );
 
   const modelMode = settings?.aiModelMode ?? 'flash';
 
@@ -101,19 +160,30 @@ export async function processDaniMessage(
     toolHandler,
   });
 
-  const { clean, stripped } = stripFillerPrefix(generation.text);
+  // Parseia JSON output {should_reply, message, reasoning}
+  const parsed = parseJsonResponse(generation.text);
+
+  if (parsed.fellBack) {
+    logger.warn(
+      { rawSample: generation.text.slice(0, 200) },
+      '[DANI] JSON parse fallback - prompt nao seguiu formato',
+    );
+  }
+
+  // Strip filler do message extraido
+  const { clean, stripped } = stripFillerPrefix(parsed.message);
 
   if (stripped) {
     logger.info(
-      { rawLength: generation.text.length, cleanLength: clean.length },
+      { rawLength: parsed.message.length, cleanLength: clean.length },
       '[DANI] filler stripped',
     );
   }
 
-  // Fallback se sobrou nada util
-  const finalReply = clean.length >= 5
-    ? clean
-    : 'Pode me contar mais sobre o que voce esta procurando?';
+  // Final reply respeitando should_reply do JSON
+  const finalReply = parsed.shouldReply
+    ? (clean.length >= 5 ? clean : 'Pode me contar mais sobre o que voce esta procurando?')
+    : '';
 
   // Extrai attachments das tool calls de detalhe (DANI quer mandar foto)
   const attachments: DaniAttachment[] = [];
@@ -138,6 +208,8 @@ export async function processDaniMessage(
 
   return {
     reply: finalReply,
+    shouldReply: parsed.shouldReply,
+    reasoning: parsed.reasoning,
     modelUsed: modelMode,
     durationMs: Date.now() - start,
     fillerStripped: stripped,

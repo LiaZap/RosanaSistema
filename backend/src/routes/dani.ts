@@ -138,6 +138,8 @@ dani.post('/chat', requireAuth, async (c) => {
 
   return c.json({
     reply: result.reply,
+    shouldReply: result.shouldReply,
+    reasoning: result.reasoning,
     conversationId,
     attachments: result.attachments,
     meta: {
