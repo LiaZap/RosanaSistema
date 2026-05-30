@@ -213,6 +213,34 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/outbound-ip ───────────────────────────
+// Debug: descobre IP de saida do servidor pra Cloudflare
+media.get('/outbound-ip', async (c) => {
+  const out: Record<string, unknown> = {};
+  try {
+    const r = await fetch('https://ifconfig.me/all.json', {
+      headers: { Accept: 'application/json' },
+    });
+    out.ifconfig = await r.json();
+  } catch (err) {
+    out.ifconfigErr = (err as Error).message;
+  }
+  try {
+    const r2 = await fetch('https://api.bling.com.br/Api/v3/produtos', {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: '1.0',
+      },
+    });
+    out.blingApiStatus = r2.status;
+    out.blingApiHeaders = Object.fromEntries(r2.headers.entries());
+  } catch (err) {
+    out.blingApiErr = (err as Error).message;
+  }
+  return c.json(out);
+});
+
 // ── GET /media/bling-health/:productId ──────────────
 // Debug: forca refresh do token limpando cooldown e mostra resultado.
 // NAO expoe tokens completos - so booleans e status codes.
