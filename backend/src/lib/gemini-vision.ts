@@ -90,9 +90,9 @@ export async function classifyImage(opts: {
     return null;
   }
 
-  // gemini-2.5-flash-lite suporta vision e é barato
+  // gemini-flash-lite-latest suporta vision e é barato
   const model = client.getGenerativeModel({
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-flash-lite-latest',
     systemInstruction: SYSTEM_PROMPT,
     generationConfig: {
       temperature: 0.2,

@@ -126,7 +126,7 @@ export async function updateContactMemory(opts: {
     .join('\n');
 
   const model = client.getGenerativeModel({
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-flash-lite-latest',
     systemInstruction: SYSTEM_PROMPT,
     generationConfig: {
       temperature: 0.1,

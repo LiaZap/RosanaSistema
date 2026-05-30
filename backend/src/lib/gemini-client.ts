@@ -16,20 +16,21 @@ const client = new GoogleGenerativeAI(apiKey ?? '');
 
 /**
  * Resolve um modo logico (flash/pro/preview) pro nome do modelo Gemini.
- * Atualizado para Gemini 2.5 (Google deprecou 1.5 em out/2025).
+ * Usa aliases -latest que o Google sempre aponta pra ultima versao estavel.
+ * Vantagem: nao precisa atualizar codigo quando Google lanca nova versao.
  */
 export function resolveModelName(mode: string | null | undefined): string {
   switch ((mode ?? 'flash').toLowerCase()) {
     case 'pro':
-      return 'gemini-2.5-pro';
+      return 'gemini-pro-latest';
     case 'lite':
-      return 'gemini-2.5-flash-lite';
+      return 'gemini-flash-lite-latest';
     case 'preview':
     case '2.0':
       return 'gemini-2.0-flash';
     case 'flash':
     default:
-      return 'gemini-2.5-flash';
+      return 'gemini-flash-latest';
   }
 }
 
