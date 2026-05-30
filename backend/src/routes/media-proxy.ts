@@ -115,60 +115,139 @@ media.get('/proxy', async (c) => {
 
 // ── GET /media/file/:productId ──────────────────────
 // Serve imagem do MinIO. Se nao tem ainda, faz upload lazy.
+// Try/catch global pra ter mensagem clara em vez de 502 generico.
 media.get('/file/:productId', async (c) => {
   const productId = c.req.param('productId');
 
-  // Tenta servir do MinIO direto
-  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
-    const key = buildProductImageKey(productId, ext);
-    const obj = await streamProductImage(key);
-    if (obj?.body) {
-      const buffer = await streamToBuffer(obj.body);
-      c.header('Content-Type', obj.contentType ?? 'image/jpeg');
-      c.header('Cache-Control', 'public, max-age=31536000, immutable');
-      return c.body(buffer as unknown as ArrayBuffer);
+  try {
+    // Tenta servir do MinIO direto
+    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+      try {
+        const key = buildProductImageKey(productId, ext);
+        const obj = await streamProductImage(key);
+        if (obj?.body) {
+          const buffer = await streamToBuffer(obj.body);
+          c.header('Content-Type', obj.contentType ?? 'image/jpeg');
+          c.header('Cache-Control', 'public, max-age=31536000, immutable');
+          return c.body(buffer as unknown as ArrayBuffer);
+        }
+      } catch (err) {
+        logger.warn(
+          { ext, productId, err: (err as Error).message },
+          '[MediaProxy] error checking MinIO',
+        );
+      }
     }
+
+    // Nao tem no MinIO ainda - tenta lazy upload do Bling
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+
+    if (!product?.imagemBling) {
+      logger.info({ productId, found: !!product }, '[MediaProxy] product or imagemBling missing');
+      return c.text('image not found', 404);
+    }
+
+    logger.info(
+      { productId, blingId: product.blingId, accountId: product.accountId },
+      '[MediaProxy] lazy uploading to MinIO',
+    );
+
+    const result = await uploadImageFromUrl({
+      productId,
+      imageUrl: product.imagemBling,
+      accountId: product.accountId,
+      blingId: product.blingId,
+    });
+    if (!result) {
+      logger.warn({ productId }, '[MediaProxy] upload returned null - redirecting to source');
+      // Fallback: tenta redirect pra URL Bling direta (browser pode conseguir)
+      // Pegar URL fresca antes do redirect
+      try {
+        const { getValidAccessToken } = await import('../lib/bling-client.js');
+        const { fetchFreshProductImageUrl } = await import('../lib/bling-client.js');
+        if (product.blingId) {
+          const token = await getValidAccessToken(product.accountId);
+          if (token) {
+            const fresh = await fetchFreshProductImageUrl({
+              accessToken: token,
+              blingId: product.blingId,
+            });
+            if (fresh) {
+              return c.redirect(fresh, 302);
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, '[MediaProxy] fresh URL fetch failed');
+      }
+      return c.text('source image unavailable', 502);
+    }
+
+    // Atualiza row
+    await db
+      .update(produtosCatalogo)
+      .set({
+        imagemMinio: `/media/file/${productId}`,
+        minioUploadedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(produtosCatalogo.id, productId));
+
+    // Refetch e stream
+    const refetched = await streamProductImage(result.key);
+    if (!refetched?.body) {
+      logger.warn({ productId, key: result.key }, '[MediaProxy] upload OK but refetch failed');
+      return c.text('upload succeeded but read failed', 500);
+    }
+    const buffer = await streamToBuffer(refetched.body);
+    c.header('Content-Type', result.mimetype);
+    c.header('Cache-Control', 'public, max-age=31536000, immutable');
+    return c.body(buffer as unknown as ArrayBuffer);
+  } catch (err) {
+    const msg = (err as Error).message;
+    const stack = (err as Error).stack?.slice(0, 500);
+    logger.error({ err: msg, stack, productId }, '[MediaProxy] /file handler crashed');
+    return c.text(`handler error: ${msg.slice(0, 200)}`, 500);
   }
+});
 
-  // Nao tem no MinIO ainda - tenta lazy upload do Bling
-  const product = await db.query.produtosCatalogo.findFirst({
-    where: eq(produtosCatalogo.id, productId),
-  });
+// ── GET /media/file/:productId/debug ────────────────
+// Endpoint debug que retorna JSON com estado de cada etapa
+media.get('/file/:productId/debug', async (c) => {
+  const productId = c.req.param('productId');
+  const result: Record<string, unknown> = { productId };
+  try {
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+    result.product = product
+      ? {
+          id: product.id,
+          blingId: product.blingId,
+          accountId: product.accountId,
+          imagemBling: product.imagemBling?.slice(0, 100),
+          imagemMinio: product.imagemMinio,
+          imagemCloudinary: product.imagemCloudinary,
+        }
+      : null;
 
-  if (!product?.imagemBling) {
-    return c.text('image not found', 404);
+    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+      const key = buildProductImageKey(productId, ext);
+      try {
+        const obj = await streamProductImage(key);
+        result[`minio_${ext}`] = obj?.body ? `found (${obj.contentLength ?? '?'} bytes)` : 'not found';
+      } catch (err) {
+        result[`minio_${ext}`] = `error: ${(err as Error).message.slice(0, 100)}`;
+      }
+    }
+
+    return c.json(result);
+  } catch (err) {
+    result.error = (err as Error).message;
+    return c.json(result, 500);
   }
-
-  logger.info({ productId }, '[MediaProxy] lazy uploading to MinIO');
-  const result = await uploadImageFromUrl({
-    productId,
-    imageUrl: product.imagemBling,
-    accountId: product.accountId,
-    blingId: product.blingId,
-  });
-  if (!result) {
-    return c.text('source image unavailable', 502);
-  }
-
-  // Atualiza row
-  await db
-    .update(produtosCatalogo)
-    .set({
-      imagemMinio: `/media/file/${productId}`,
-      minioUploadedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(eq(produtosCatalogo.id, productId));
-
-  // Refetch e stream
-  const refetched = await streamProductImage(result.key);
-  if (!refetched?.body) {
-    return c.text('upload succeeded but read failed', 500);
-  }
-  const buffer = await streamToBuffer(refetched.body);
-  c.header('Content-Type', result.mimetype);
-  c.header('Cache-Control', 'public, max-age=31536000, immutable');
-  return c.body(buffer as unknown as ArrayBuffer);
 });
 
 // Helper pra stream -> buffer
