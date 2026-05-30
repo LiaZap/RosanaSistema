@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { blingCredentials } from '../db/schema.js';
+import { getRedis } from './queues.js';
 import { logger } from './logger.js';
 
 /**
@@ -107,8 +108,17 @@ export async function refreshTokens(opts: {
 
 /**
  * Pega um access_token valido pra uma account. Renova se expirou.
+ *
+ * Circuit breaker via Redis:
+ *  - Se ja teve refresh nos ultimos 60s, retorna o token atual (mesmo se
+ *    proximo de expirar) pra evitar cascata
+ *  - Se ultimo refresh falhou, espera 5min antes de tentar de novo
+ *
  * Retorna null se a conta nao tem credentials/tokens.
  */
+const REFRESH_COOLDOWN_OK_S = 60;
+const REFRESH_COOLDOWN_FAIL_S = 300;
+
 export async function getValidAccessToken(accountId: string): Promise<string | null> {
   const cred = await db.query.blingCredentials.findFirst({
     where: eq(blingCredentials.accountId, accountId),
@@ -118,7 +128,7 @@ export async function getValidAccessToken(accountId: string): Promise<string | n
     return null;
   }
 
-  // Se expira em menos de 5min, renova
+  // Se expira em menos de 5min, tenta renovar
   const expiresAt = cred.expiresAt?.getTime() ?? 0;
   const fiveMinFromNow = Date.now() + 5 * 60 * 1000;
 
@@ -126,26 +136,67 @@ export async function getValidAccessToken(accountId: string): Promise<string | n
     return cred.accessToken;
   }
 
+  // Circuit breaker: se ja refrescou recentemente, retorna token atual
+  const redis = getRedis();
+  const okKey = `fce:bling:refresh:ok:${accountId}`;
+  const failKey = `fce:bling:refresh:fail:${accountId}`;
+
+  try {
+    const [recentOk, recentFail] = await Promise.all([
+      redis.get(okKey),
+      redis.get(failKey),
+    ]);
+
+    if (recentFail) {
+      logger.warn(
+        { accountId, ttl: await redis.ttl(failKey) },
+        '[Bling] refresh in cooldown after failure - returning current token',
+      );
+      return cred.accessToken;
+    }
+    if (recentOk) {
+      logger.debug({ accountId }, '[Bling] refresh recently done - using current token');
+      return cred.accessToken;
+    }
+  } catch (err) {
+    logger.warn({ err: (err as Error).message }, '[Bling] redis check failed - proceeding');
+  }
+
   // Renova
   logger.info({ accountId, expiresAt }, '[Bling] refreshing access_token');
-  const tokens = await refreshTokens({
-    clientId: cred.clientId,
-    clientSecret: cred.clientSecret,
-    refreshToken: cred.refreshToken,
-  });
 
-  const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
-  await db
-    .update(blingCredentials)
-    .set({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: newExpiresAt,
-      updatedAt: new Date(),
-    })
-    .where(eq(blingCredentials.accountId, accountId));
+  try {
+    const tokens = await refreshTokens({
+      clientId: cred.clientId,
+      clientSecret: cred.clientSecret,
+      refreshToken: cred.refreshToken,
+    });
 
-  return tokens.access_token;
+    const newExpiresAt = new Date(Date.now() + tokens.expires_in * 1000);
+    await db
+      .update(blingCredentials)
+      .set({
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: newExpiresAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(blingCredentials.accountId, accountId));
+
+    // Marca cooldown de sucesso
+    redis.set(okKey, '1', 'EX', REFRESH_COOLDOWN_OK_S).catch(() => {});
+    return tokens.access_token;
+  } catch (err) {
+    const msg = (err as Error).message;
+    logger.error(
+      { accountId, err: msg },
+      '[Bling] refresh failed - entering 5min cooldown',
+    );
+    // Marca cooldown de falha pra evitar 429
+    redis.set(failKey, msg.slice(0, 200), 'EX', REFRESH_COOLDOWN_FAIL_S).catch(() => {});
+    // Retorna token atual (pode funcionar se nao expirou ainda)
+    return cred.accessToken;
+  }
 }
 
 /** Tipo minimo de produto retornado pela Bling API v3 */
