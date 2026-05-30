@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
+import { Avatar } from '../components/ui/avatar';
+import EmptyState from '../components/ui/EmptyState';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -39,7 +41,33 @@ interface SummaryRow {
 function fmtBRL(value: string | number | null): string {
   if (value == null) return '—';
   const n = typeof value === 'string' ? Number(value) : value;
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(n);
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(ms / 60_000);
+  if (min < 1) return 'agora';
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d`;
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+}
+
+// Cores estáveis pra stages (caso vier sem color do backend)
+const STAGE_COLORS: Record<string, string> = {
+  'NOVOS LEADS': 'hsl(var(--stage-new))',
+  'EM QUALIFICACAO': 'hsl(var(--stage-qualified))',
+  'OPORTUNIDADE': 'hsl(var(--stage-opportunity))',
+  'FECHAMENTO': 'hsl(var(--stage-closing))',
+  'GANHO': 'hsl(var(--stage-won))',
+  'PERDIDO': 'hsl(var(--stage-lost))',
+};
+
+function stageColor(stage: Stage): string {
+  return stage.color || STAGE_COLORS[stage.name.toUpperCase()] || 'hsl(var(--muted-foreground))';
 }
 
 export default function PipelinePage() {
@@ -54,7 +82,6 @@ export default function PipelinePage() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStageId, setOverStageId] = useState<string | null>(null);
 
-  // Modal de novo deal
   const [showNewDeal, setShowNewDeal] = useState(false);
   const [newDealStageId, setNewDealStageId] = useState<string>('');
   const [newDeal, setNewDeal] = useState({
@@ -117,6 +144,11 @@ export default function PipelinePage() {
     return map;
   }, [summary]);
 
+  const totalValue = useMemo(
+    () => summary.reduce((acc, s) => acc + (s.totalValue || 0), 0),
+    [summary],
+  );
+
   function handleDragStart(e: React.DragEvent, dealId: string) {
     setDraggingId(dealId);
     e.dataTransfer.effectAllowed = 'move';
@@ -141,15 +173,12 @@ export default function PipelinePage() {
     if (!dealId) return;
     const deal = deals.find((d) => d.id === dealId);
     if (!deal || deal.stageId === stageId) return;
-
-    // Optimistic
     setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, stageId } : d)));
     try {
       await api.patch(`/pipeline/deals/${dealId}`, { accountId, stageId });
       await loadAll();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falha ao mover');
-      // Rollback
       setDeals((prev) => prev.map((d) => (d.id === dealId ? { ...d, stageId: deal.stageId } : d)));
     }
   }
@@ -196,120 +225,105 @@ export default function PipelinePage() {
   if (loading) {
     return (
       <AppShell title="Pipeline" bare>
-        <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          Carregando pipeline...
+        <div className="flex-1 p-4 overflow-x-auto">
+          <div className="flex gap-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="skeleton w-72 h-[500px] rounded-xl shrink-0" />
+            ))}
+          </div>
         </div>
       </AppShell>
     );
   }
 
-  // Use me to silence ts (was reading from me?.accounts in old header)
   void me;
 
   return (
-    <AppShell title="Pipeline" subtitle={`${deals.length} deals`} bare>
+    <AppShell
+      title="Pipeline"
+      subtitle={`${deals.length} deals · ${fmtBRL(totalValue)} em valor total`}
+      bare
+    >
       {error && (
         <div className="p-4">
-          <div className="rounded-lg border border-fce-red/40 bg-fce-red/10 p-3 text-sm text-fce-red">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
             {error}
           </div>
         </div>
       )}
 
       {/* Kanban */}
-      <div className="flex-1 p-4 overflow-x-auto overflow-y-auto">
-        <div className="flex gap-3 min-w-min">
+      <div className="flex-1 p-4 overflow-x-auto overflow-y-hidden">
+        <div className="flex gap-3 min-w-min h-full pb-4">
           {stages.map((stage) => {
             const stageDeals = dealsByStage.get(stage.id) ?? [];
             const stageSummary = summaryByStage.get(stage.id);
             const isOver = overStageId === stage.id;
+            const color = stageColor(stage);
             return (
               <div
                 key={stage.id}
                 onDragOver={(e) => handleDragOver(e, stage.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, stage.id)}
-                className={`flex-shrink-0 w-72 rounded-xl bg-card/50 border transition-colors ${
-                  isOver ? 'border-fce-pink bg-fce-pink/10' : 'border-border'
+                className={`flex-shrink-0 w-72 rounded-xl border transition-all flex flex-col ${
+                  isOver
+                    ? 'border-primary bg-primary/5 shadow-glow'
+                    : 'border-border bg-card/40'
                 }`}
               >
                 {/* Stage header */}
-                <div
-                  className="p-3 border-b border-border flex items-center justify-between"
-                  style={{ borderTopColor: stage.color ?? '#ccc', borderTopWidth: 3 }}
-                >
-                  <div>
-                    <h3 className="font-semibold text-foreground text-sm uppercase">
-                      {stage.name}
-                    </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {stageSummary?.count ?? 0} ·{' '}
-                      <span className="text-fce-green font-medium">
-                        {fmtBRL(stageSummary?.totalValue ?? 0)}
-                      </span>
-                    </p>
+                <div className="p-3 border-b border-border relative">
+                  <div
+                    className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl"
+                    style={{ background: color }}
+                  />
+                  <div className="flex items-start justify-between gap-2 pt-1">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-foreground text-sm uppercase tracking-wide truncate flex items-center gap-2">
+                        <span
+                          className="badge-dot"
+                          style={{ background: color }}
+                        />
+                        {stage.name}
+                      </h3>
+                      <div className="flex items-baseline gap-1.5 mt-1">
+                        <span className="text-xl font-bold text-foreground tabular-nums">
+                          {stageSummary?.count ?? 0}
+                        </span>
+                        <span className="text-xs text-fce-green font-medium">
+                          {fmtBRL(stageSummary?.totalValue ?? 0)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => openNewDeal(stage.id)}
+                      className="w-7 h-7 rounded-md border border-border hover:bg-card hover:border-border-strong
+                                 text-muted-foreground hover:text-foreground text-base leading-none transition-colors shrink-0"
+                      title="Novo deal"
+                    >
+                      +
+                    </button>
                   </div>
-                  <button
-                    onClick={() => openNewDeal(stage.id)}
-                    className="w-7 h-7 rounded-lg border border-border hover:bg-card
-                               text-muted-foreground hover:text-foreground text-lg leading-none"
-                    title="Novo deal"
-                  >
-                    +
-                  </button>
                 </div>
 
-                {/* Deals */}
-                <div className="p-2 space-y-2 min-h-[200px]">
+                {/* Deals scrollable */}
+                <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
                   {stageDeals.length === 0 && (
-                    <div className="text-center text-xs text-muted-foreground py-8">
-                      Arraste deals aqui
+                    <div className="text-center text-xs text-muted-foreground py-12 px-3 border border-dashed border-border rounded-lg">
+                      Arraste deals aqui ou clique em <span className="text-foreground">+</span>
                     </div>
                   )}
                   {stageDeals.map((deal) => (
-                    <div
+                    <DealCard
                       key={deal.id}
-                      draggable
+                      deal={deal}
+                      dragging={draggingId === deal.id}
                       onDragStart={(e) => handleDragStart(e, deal.id)}
                       onDragEnd={() => setDraggingId(null)}
-                      className={`group glass rounded-lg p-3 space-y-1.5 cursor-grab
-                                  active:cursor-grabbing transition-opacity ${
-                                    draggingId === deal.id ? 'opacity-40' : ''
-                                  }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="font-semibold text-foreground text-sm flex-1">
-                          {deal.title}
-                        </h4>
-                        <button
-                          onClick={() => handleDeleteDeal(deal.id)}
-                          className="text-muted-foreground hover:text-fce-red text-xs
-                                     opacity-0 group-hover:opacity-100 transition-opacity"
-                          title="Apagar"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                      <div className="text-xs text-muted-foreground flex items-center gap-2">
-                        <span className="w-5 h-5 rounded-full bg-card border border-border
-                                         flex items-center justify-center text-[10px] font-bold">
-                          {(deal.contactName?.[0] ?? deal.contactPhone[0]).toUpperCase()}
-                        </span>
-                        <span className="truncate">
-                          {deal.contactName ?? deal.contactPhone}
-                        </span>
-                      </div>
-                      {deal.value && (
-                        <div className="text-sm font-semibold text-fce-green">
-                          {fmtBRL(deal.value)}
-                        </div>
-                      )}
-                      {deal.expectedCloseDate && (
-                        <div className="text-[10px] text-muted-foreground">
-                          🗓 {new Date(deal.expectedCloseDate).toLocaleDateString('pt-BR')}
-                        </div>
-                      )}
-                    </div>
+                      onDelete={() => handleDeleteDeal(deal.id)}
+                      accentColor={color}
+                    />
                   ))}
                 </div>
               </div>
@@ -318,30 +332,46 @@ export default function PipelinePage() {
         </div>
       </div>
 
+      {/* Empty state se nenhuma stage */}
+      {stages.length === 0 && (
+        <div className="p-6 max-w-2xl mx-auto">
+          <EmptyState
+            title="Nenhuma stage configurada"
+            description="Inicialize o sistema pra criar as 6 stages padrão (Novos Leads, Em Qualificação, Oportunidade, Fechamento, Ganho, Perdido)."
+          />
+        </div>
+      )}
+
       {/* Modal Novo Deal */}
       {showNewDeal && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fade-in"
           onClick={(e) => e.target === e.currentTarget && setShowNewDeal(false)}
         >
-          <div className="bg-card border border-border rounded-xl p-6 max-w-md w-full space-y-4">
-            <h2 className="text-lg font-bold text-foreground">Novo deal</h2>
+          <div className="card-elev bg-card-elevated rounded-xl p-6 max-w-md w-full space-y-4 shadow-md">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">Novo deal</h2>
+              <p className="text-xs text-muted-foreground mt-1">
+                {stages.find((s) => s.id === newDealStageId)?.name}
+              </p>
+            </div>
             <form onSubmit={handleCreateDeal} className="space-y-3">
               <div>
-                <label className="block text-xs uppercase text-muted-foreground mb-1">Titulo</label>
+                <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+                  Título
+                </label>
                 <input
                   type="text"
                   value={newDeal.title}
                   onChange={(e) => setNewDeal({ ...newDeal, title: e.target.value })}
                   placeholder="Ex: Enxoval Smart Baby"
                   required
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-border
-                             text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="input-base"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs uppercase text-muted-foreground mb-1">
+                  <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                     Nome contato
                   </label>
                   <input
@@ -349,12 +379,11 @@ export default function PipelinePage() {
                     value={newDeal.contactName}
                     onChange={(e) => setNewDeal({ ...newDeal, contactName: e.target.value })}
                     placeholder="Maria"
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border
-                               text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="input-base"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs uppercase text-muted-foreground mb-1">
+                  <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                     Telefone *
                   </label>
                   <input
@@ -363,13 +392,12 @@ export default function PipelinePage() {
                     onChange={(e) => setNewDeal({ ...newDeal, contactPhone: e.target.value })}
                     placeholder="5531999999999"
                     required
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border
-                               text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-ring"
+                    className="input-base font-mono"
                   />
                 </div>
               </div>
               <div>
-                <label className="block text-xs uppercase text-muted-foreground mb-1">
+                <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                   Valor (R$)
                 </label>
                 <input
@@ -378,38 +406,34 @@ export default function PipelinePage() {
                   value={newDeal.value}
                   onChange={(e) => setNewDeal({ ...newDeal, value: e.target.value })}
                   placeholder="475.00"
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-border
-                             text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="input-base"
                 />
               </div>
               <div>
-                <label className="block text-xs uppercase text-muted-foreground mb-1">
+                <label className="block text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
                   Notas
                 </label>
                 <textarea
                   value={newDeal.notes}
                   onChange={(e) => setNewDeal({ ...newDeal, notes: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 rounded-lg bg-background border border-border
-                             text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  className="input-base resize-none"
                 />
               </div>
               <div className="flex gap-2 justify-end pt-2">
                 <button
                   type="button"
                   onClick={() => setShowNewDeal(false)}
-                  className="px-4 py-2 rounded-lg border border-border text-sm
-                             text-muted-foreground hover:bg-background"
+                  className="btn-secondary btn-md"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={saving || !newDeal.title || !newDeal.contactPhone}
-                  className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold
-                             disabled:opacity-40"
+                  className="btn-primary btn-md"
                 >
-                  {saving ? 'Criando...' : 'Criar'}
+                  {saving ? 'Criando...' : 'Criar deal'}
                 </button>
               </div>
             </form>
@@ -417,5 +441,77 @@ export default function PipelinePage() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+function DealCard({
+  deal,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onDelete,
+  accentColor,
+}: {
+  deal: Deal;
+  dragging: boolean;
+  onDragStart: (e: React.DragEvent) => void;
+  onDragEnd: () => void;
+  onDelete: () => void;
+  accentColor: string;
+}) {
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      className={`group card-elev p-3 space-y-2 cursor-grab active:cursor-grabbing
+                  hover:border-border-strong hover:shadow-md transition-all relative overflow-hidden
+                  ${dragging ? 'opacity-40 scale-95' : ''}`}
+    >
+      {/* Filete lateral colorido */}
+      <div
+        className="absolute top-0 left-0 bottom-0 w-[3px] opacity-60"
+        style={{ background: accentColor }}
+      />
+      <div className="flex items-start justify-between gap-2 pl-1">
+        <h4 className="font-semibold text-foreground text-sm flex-1 leading-snug text-balance">
+          {deal.title}
+        </h4>
+        <button
+          onClick={onDelete}
+          className="text-muted-foreground/60 hover:text-destructive text-xs
+                     opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          title="Apagar"
+        >
+          ✕
+        </button>
+      </div>
+      <div className="flex items-center gap-2 pl-1">
+        <Avatar
+          fallback={deal.contactName ?? deal.contactPhone.slice(-2)}
+          size="sm"
+        />
+        <div className="flex-1 min-w-0">
+          <div className="text-xs text-foreground truncate">
+            {deal.contactName ?? '—'}
+          </div>
+          <div className="text-[10px] text-muted-foreground font-mono">
+            +{deal.contactPhone}
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center justify-between pl-1 pt-1 border-t border-border/60">
+        {deal.value ? (
+          <span className="text-sm font-bold text-fce-green tabular-nums">
+            {fmtBRL(deal.value)}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">sem valor</span>
+        )}
+        <span className="text-[10px] text-muted-foreground" title={new Date(deal.updatedAt).toLocaleString('pt-BR')}>
+          {timeAgo(deal.updatedAt)}
+        </span>
+      </div>
+    </div>
   );
 }
