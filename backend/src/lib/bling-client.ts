@@ -41,6 +41,14 @@ export function buildAuthorizeUrl(opts: {
   return `${BLING_AUTHORIZE_URL}?${params.toString()}`;
 }
 
+// Headers que parecem browser real - Cloudflare e mais permissivo
+const HUMAN_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  Accept: 'application/json,text/plain,*/*',
+};
+
 /**
  * Troca authorization code por tokens.
  * Bling exige Basic Auth com clientId:clientSecret.
@@ -59,9 +67,9 @@ export async function exchangeCodeForTokens(opts: {
   const res = await fetch(BLING_TOKEN_URL, {
     method: 'POST',
     headers: {
+      ...HUMAN_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: `Basic ${basic}`,
-      Accept: 'application/json',
     },
     body,
   });
@@ -91,9 +99,9 @@ export async function refreshTokens(opts: {
   const res = await fetch(BLING_TOKEN_URL, {
     method: 'POST',
     headers: {
+      ...HUMAN_HEADERS,
       'Content-Type': 'application/x-www-form-urlencoded',
       Authorization: `Basic ${basic}`,
-      Accept: 'application/json',
     },
     body,
   });
