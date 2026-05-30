@@ -138,10 +138,40 @@ export async function saveMessage(opts: {
     })
     .returning({ id: messages.id });
 
+  // Quando humano envia mensagem, conversation entra em modo human (DANI pausa)
+  // Quando user (cliente) envia, mantém status atual (DANI processa se 'nina')
+  const statusUpdate =
+    opts.fromType === 'human' ? { status: 'human' as const } : {};
+
   await db
     .update(conversations)
-    .set({ lastMessageAt: new Date(), updatedAt: new Date() })
+    .set({ lastMessageAt: new Date(), updatedAt: new Date(), ...statusUpdate })
     .where(eq(conversations.id, opts.conversationId));
 
   return saved;
+}
+
+/**
+ * Verifica se a DANI deve responder a essa conversa.
+ * Retorna false se status='human' (operador assumiu) ou 'paused' ou 'closed'.
+ */
+export async function isDaniActiveForConversation(
+  conversationId: string,
+): Promise<boolean> {
+  const conv = await db.query.conversations.findFirst({
+    where: eq(conversations.id, conversationId),
+    columns: { status: true },
+  });
+  return conv?.status === 'nina';
+}
+
+/**
+ * Reativa DANI numa conversa em modo human/paused.
+ * Setta status='nina'.
+ */
+export async function reactivateDani(conversationId: string): Promise<void> {
+  await db
+    .update(conversations)
+    .set({ status: 'nina', updatedAt: new Date() })
+    .where(eq(conversations.id, conversationId));
 }

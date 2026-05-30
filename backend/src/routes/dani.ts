@@ -171,6 +171,44 @@ dani.post('/conversations', requireAuth, async (c) => {
   return c.json({ conversationId: conv.id });
 });
 
+// ── POST /dani/conversations/:id/reactivate ─────────
+// Devolve a conversa pra DANI (status -> nina). Usado quando humano
+// estava atendendo via "modo human" e quer reativar a IA.
+dani.post('/conversations/:id/reactivate', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const accountId = z.string().uuid().parse(body.accountId);
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  await assertConversationInAccount(conversationId, accountId);
+
+  const { reactivateDani } = await import('../lib/dani-conversations.js');
+  await reactivateDani(conversationId);
+  return c.json({ ok: true, status: 'nina' });
+});
+
+// ── POST /dani/conversations/:id/pause ──────────────
+// Pausa a DANI (status -> human ou paused). Quando humano vai
+// assumir manualmente.
+dani.post('/conversations/:id/pause', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json().catch(() => ({}));
+  const accountId = z.string().uuid().parse(body.accountId);
+  const mode = (body.mode as 'human' | 'paused') ?? 'human';
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  await assertConversationInAccount(conversationId, accountId);
+
+  await db
+    .update(conversations)
+    .set({ status: mode, updatedAt: new Date() })
+    .where(eq(conversations.id, conversationId));
+
+  return c.json({ ok: true, status: mode });
+});
+
 // ── GET /dani/conversations/:id/messages ────────────
 dani.get('/conversations/:id/messages', requireAuth, async (c) => {
   const user = getUser(c);
