@@ -58,9 +58,9 @@ const STATUS_LABELS: Record<ConversationRow['status'], string> = {
 };
 
 const STATUS_COLORS: Record<ConversationRow['status'], string> = {
-  nina: 'bg-fce-pink/15 text-fce-pink border-fce-pink/30',
-  human: 'bg-fce-green/15 text-fce-green border-fce-green/30',
-  paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+  nina: 'bg-primary/10 text-primary border-primary/20',
+  human: 'bg-fce-green/10 text-fce-green border-fce-green/20',
+  paused: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20',
   closed: 'bg-muted text-muted-foreground border-border',
 };
 
@@ -159,7 +159,7 @@ export default function ConversationsPage() {
               };
               const colors: Record<typeof key, string> = {
                 all: 'text-foreground',
-                nina: 'text-fce-pink',
+                nina: 'text-primary',
                 human: 'text-fce-green',
                 paused: 'text-yellow-400',
                 closed: 'text-muted-foreground',
@@ -168,16 +168,16 @@ export default function ConversationsPage() {
                 <button
                   key={key}
                   onClick={() => setFilter(key)}
-                  className={`bg-card/40 border rounded-xl p-3 text-left transition-colors ${
+                  className={`card-base p-3 text-left transition-colors ${
                     filter === key
-                      ? 'border-fce-pink/60 bg-fce-pink/5'
-                      : 'border-border/60 hover:border-border'
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'hover:border-border'
                   }`}
                 >
                   <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
                     {labels[key]}
                   </div>
-                  <div className={`text-2xl font-bold mt-0.5 ${colors[key]}`}>{count}</div>
+                  <div className={`text-xl font-semibold mt-0.5 ${colors[key]}`}>{count}</div>
                 </button>
               );
             })}
@@ -189,9 +189,7 @@ export default function ConversationsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por nome, telefone ou conteudo..."
-          className="w-full px-4 py-2.5 rounded-lg bg-card/40 border border-border/60
-                     text-foreground placeholder:text-muted-foreground text-sm
-                     focus:outline-none focus:ring-2 focus:ring-fce-pink/40 focus:border-fce-pink/40"
+          className="input-base"
         />
 
         {/* List */}
@@ -209,12 +207,12 @@ export default function ConversationsPage() {
             <Link
               key={conv.id}
               to={`/conversations/${conv.id}`}
-              className="bg-card/40 border border-border/60 hover:border-border hover:bg-card/60
-                         rounded-xl p-3.5 flex gap-3 transition-colors"
+              className="card-base hover:border-border hover:bg-muted/30
+                         p-3 flex gap-3 transition-colors"
             >
               <div
-                className="w-11 h-11 rounded-full bg-card border border-border
-                           flex items-center justify-center text-base font-bold text-foreground shrink-0"
+                className="w-10 h-10 rounded-full bg-secondary border border-border
+                           flex items-center justify-center text-sm font-semibold text-foreground shrink-0"
               >
                 {(conv.contactName?.[0] ?? conv.contactPhone[0] ?? '?').toUpperCase()}
               </div>

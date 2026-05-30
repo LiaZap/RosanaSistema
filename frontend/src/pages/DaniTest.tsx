@@ -191,15 +191,23 @@ export default function DaniTestPage() {
                     : 'bg-card border border-border text-foreground'
                 }`}
               >
-                {/* Attachments */}
+                {/* Attachments - proxy via backend pra burlar hot-link */}
                 {t.attachments?.map((att, ai) =>
                   att.type === 'image' ? (
                     <img
                       key={ai}
-                      src={att.url}
-                      alt={att.caption ?? 'foto produto'}
-                      className="rounded-lg mb-2 -mx-1 max-w-[280px]"
+                      src={
+                        att.url.includes('res.cloudinary.com')
+                          ? att.url
+                          : `/api/media/proxy?url=${encodeURIComponent(att.url)}`
+                      }
+                      alt={att.caption ?? 'produto'}
+                      className="rounded-lg mb-2 -mx-1 max-w-[280px] bg-muted"
                       loading="lazy"
+                      onError={(e) => {
+                        // Se proxy falhar, esconde a img (caption ja vai no texto)
+                        (e.target as HTMLImageElement).style.display = 'none';
+                      }}
                     />
                   ) : null,
                 )}

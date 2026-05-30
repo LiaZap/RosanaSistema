@@ -4,26 +4,46 @@
 
 @layer base {
   :root {
-    --background: 340 30% 5%;
-    --foreground: 0 0% 98%;
-    --card: 340 25% 8%;
+    /* Sprint 9 - Design System V2
+     * Cara Linear/Pipedrive. Brand pink so em accents (CTAs, estados ativos).
+     * Cinza-zinc como base, neutralidade premium.
+     */
+
+    /* Surfaces (dark warm-neutral, nao mais saturado pink) */
+    --background: 240 6% 4%;          /* canvas */
+    --foreground: 0 0% 98%;            /* texto principal */
+    --card: 240 5% 9%;                 /* cards, sidebar */
     --card-foreground: 0 0% 98%;
-    --popover: 340 25% 8%;
+    --popover: 240 5% 11%;             /* modal, popover */
     --popover-foreground: 0 0% 98%;
-    --primary: 325 94% 46%;
+
+    /* Brand (uso parcimonioso) */
+    --primary: 325 94% 46%;            /* #e50789 - so em CTAs comerciais e active state */
     --primary-foreground: 0 0% 100%;
-    --secondary: 340 20% 14%;
+    --secondary: 240 5% 14%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 340 15% 16%;
-    --muted-foreground: 215 16% 57%;
-    --accent: 74 67% 47%;
+
+    /* Muted (inputs, hover, dividers) */
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 65%;    /* texto secundario, melhor contraste */
+
+    /* Accent */
+    --accent: 74 67% 47%;              /* green - so em success */
     --accent-foreground: 0 0% 8%;
-    --destructive: 6 90% 58%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 215 25% 20%;
-    --input: 215 25% 20%;
+
+    /* Status */
+    --destructive: 0 84% 60%;          /* vermelho mais neutro, menos saturado */
+    --destructive-foreground: 0 0% 98%;
+    --success: 142 71% 45%;
+    --warning: 38 92% 50%;
+    --info: 217 91% 60%;
+
+    /* Borders */
+    --border: 240 4% 18%;
+    --input: 240 4% 18%;
     --ring: 325 94% 46%;
-    --radius: 0.75rem;
+
+    --radius: 0.5rem;                  /* menor - tira cara de "toy" */
   }
 
   * {
@@ -32,10 +52,11 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1, "ss01" 1;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   }
 
-  /* Custom scrollbar */
+  /* Scrollbar sutil */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -47,18 +68,80 @@
     @apply bg-border rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-muted-foreground;
+    @apply bg-muted-foreground/40;
+  }
+
+  /* Focus ring profissional */
+  *:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.5);
+  }
+}
+
+@layer components {
+  /* Card padrao - replaces .glass */
+  .card-base {
+    @apply bg-card border border-border/60 rounded-lg;
+  }
+  .card-elev {
+    @apply bg-card border border-border rounded-lg shadow-sm;
+  }
+
+  /* Button bases */
+  .btn-primary {
+    @apply gradient-pink text-white font-semibold hover:opacity-90 disabled:opacity-40
+           disabled:cursor-not-allowed rounded-md transition-opacity;
+  }
+  .btn-secondary {
+    @apply bg-secondary border border-border text-foreground hover:bg-muted
+           disabled:opacity-40 rounded-md transition-colors;
+  }
+  .btn-ghost {
+    @apply text-muted-foreground hover:text-foreground hover:bg-muted
+           disabled:opacity-40 rounded-md transition-colors;
+  }
+  .btn-danger {
+    @apply bg-destructive/10 border border-destructive/30 text-destructive
+           hover:bg-destructive/20 disabled:opacity-40 rounded-md transition-colors;
+  }
+
+  /* Input padrao */
+  .input-base {
+    @apply w-full px-3 py-2 rounded-md bg-card border border-border text-foreground
+           placeholder:text-muted-foreground text-sm focus:outline-none
+           focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-colors;
+  }
+
+  /* Badge padrao */
+  .badge-base {
+    @apply inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider;
+  }
+  .badge-neutral {
+    @apply badge-base bg-muted text-muted-foreground border border-border;
+  }
+  .badge-success {
+    @apply badge-base bg-fce-green/15 text-fce-green border border-fce-green/30;
+  }
+  .badge-danger {
+    @apply badge-base bg-destructive/15 text-destructive border border-destructive/30;
+  }
+  .badge-warning {
+    @apply badge-base bg-yellow-500/15 text-yellow-400 border border-yellow-500/30;
+  }
+  .badge-brand {
+    @apply badge-base bg-primary/15 text-primary border border-primary/30;
   }
 }
 
 @layer utilities {
   .gradient-pink {
-    background: linear-gradient(135deg, #e50789, #8f1b3f);
+    background: linear-gradient(135deg, #e50789 0%, #c2076e 100%);
   }
   .gradient-pink-hover {
-    background: linear-gradient(135deg, #f008a0, #a52050);
+    background: linear-gradient(135deg, #f008a0 0%, #d8087a 100%);
   }
+  /* Backwards-compat - some pages still reference .glass */
   .glass {
-    @apply bg-card/50 backdrop-blur-lg border border-border/50;
+    @apply bg-card border border-border/60;
   }
 }
