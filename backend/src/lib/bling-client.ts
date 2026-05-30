@@ -272,7 +272,7 @@ export async function fetchFreshProductImageUrl(opts: {
       midia?: {
         imagens?: {
           externas?: Array<{ link?: string }>;
-          internas?: Array<{ linkMiniatura?: string; validade?: string }>;
+          internas?: Array<{ link?: string; linkMiniatura?: string; validade?: string }>;
         };
       };
     };
@@ -285,18 +285,27 @@ export async function fetchFreshProductImageUrl(opts: {
     return externa;
   }
 
-  // 2. Internas: pre-signed S3 com validade. Filtra os ainda validos.
+  // 2. Internas: pre-signed S3.
+  // Schema real Bling: { link (FULL), linkMiniatura (thumb com /t/), validade }
+  // Preferimos `link` (imagem original) sobre `linkMiniatura`.
   const now = Date.now();
   const interna = json.data?.midia?.imagens?.internas?.find((i) => {
-    if (!i.linkMiniatura) return false;
-    if (!i.validade) return true; // sem validade declarada, tenta
+    if (!i.link && !i.linkMiniatura) return false;
+    if (!i.validade) return true;
     const expira = Date.parse(i.validade);
     return Number.isFinite(expira) ? expira > now : true;
   });
+  if (interna?.link) {
+    logger.debug(
+      { blingId: opts.blingId, source: 'interna.link', validade: interna.validade },
+      '[Bling] image URL resolved (full)',
+    );
+    return interna.link;
+  }
   if (interna?.linkMiniatura) {
     logger.debug(
-      { blingId: opts.blingId, source: 'interna', validade: interna.validade },
-      '[Bling] image URL resolved (linkMiniatura)',
+      { blingId: opts.blingId, source: 'interna.linkMiniatura', validade: interna.validade },
+      '[Bling] image URL resolved (thumb fallback)',
     );
     return interna.linkMiniatura;
   }

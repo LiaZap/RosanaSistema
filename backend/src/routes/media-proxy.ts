@@ -144,8 +144,39 @@ media.get('/file/:productId', async (c) => {
       where: eq(produtosCatalogo.id, productId),
     });
 
-    if (!product?.imagemBling) {
-      logger.info({ productId, found: !!product }, '[MediaProxy] product or imagemBling missing');
+    if (!product) {
+      logger.info({ productId }, '[MediaProxy] product not found');
+      return c.text('product not found', 404);
+    }
+
+    // Sem imagemBling salvo? Tenta resolver via GET detail no Bling.
+    let imageUrl = product.imagemBling;
+    if (!imageUrl && product.blingId) {
+      try {
+        const { getValidAccessToken, fetchFreshProductImageUrl } = await import(
+          '../lib/bling-client.js'
+        );
+        const token = await getValidAccessToken(product.accountId);
+        if (token) {
+          imageUrl = await fetchFreshProductImageUrl({
+            accessToken: token,
+            blingId: product.blingId,
+          });
+          if (imageUrl) {
+            // Atualiza no banco pra proxima vez
+            await db
+              .update(produtosCatalogo)
+              .set({ imagemBling: imageUrl, updatedAt: new Date() })
+              .where(eq(produtosCatalogo.id, productId));
+          }
+        }
+      } catch (err) {
+        logger.warn({ err: (err as Error).message }, '[MediaProxy] fresh resolve failed');
+      }
+    }
+
+    if (!imageUrl) {
+      logger.info({ productId, blingId: product.blingId }, '[MediaProxy] no image URL');
       return c.text('image not found', 404);
     }
 
@@ -156,7 +187,7 @@ media.get('/file/:productId', async (c) => {
 
     const result = await uploadImageFromUrl({
       productId,
-      imageUrl: product.imagemBling,
+      imageUrl,
       accountId: product.accountId,
       blingId: product.blingId,
     });

@@ -48,8 +48,10 @@ function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult 
     imagem = row.imagemCloudinary;
   } else if (row.imagemMinio) {
     imagem = row.imagemMinio;
-  } else if (row.imagemBling) {
-    // Tem imagem na fonte - retorna URL do nosso endpoint que faz lazy upload
+  } else if (row.imagemBling || row.blingId) {
+    // Mesmo sem imagemBling salvo, se tem blingId podemos buscar via
+    // GET /produtos/{id} -> midia.imagens.internas[].link
+    // O endpoint /media/file/:id faz isso lazy.
     imagem = `/media/file/${row.id}`;
   }
 
