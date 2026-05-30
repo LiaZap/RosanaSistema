@@ -269,6 +269,74 @@ bling.post('/circuit-breaker/reset', requireAuth, async (c) => {
   }
 });
 
+// ── POST /bling/tokens/manual ────────────────────────
+// Browser-side OAuth: o browser do user faz o token exchange (IP residencial
+// limpo, sem rate-limit Cloudflare) e posta os tokens aqui. Fallback pra
+// quando o IP do servidor esta rate-limited pelo Cloudflare.
+const manualTokensSchema = z.object({
+  accountId: z.string().uuid(),
+  accessToken: z.string().min(10),
+  refreshToken: z.string().min(10),
+  expiresIn: z.number().int().positive(),
+});
+
+bling.post('/tokens/manual', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const parsed = manualTokensSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
+  }
+  const { accountId, accessToken, refreshToken, expiresIn } = parsed.data;
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const cred = await db.query.blingCredentials.findFirst({
+    where: eq(blingCredentials.accountId, accountId),
+  });
+  if (!cred?.clientId) {
+    throw new ValidationError('Cadastre Client ID e Client Secret antes');
+  }
+
+  const expiresAt = new Date(Date.now() + expiresIn * 1000);
+  await db
+    .update(blingCredentials)
+    .set({ accessToken, refreshToken, expiresAt, updatedAt: new Date() })
+    .where(eq(blingCredentials.accountId, accountId));
+
+  // Limpa cooldowns Redis tambem
+  try {
+    const redis = getRedis();
+    await Promise.all([
+      redis.del(`fce:bling:refresh:ok:${accountId}`),
+      redis.del(`fce:bling:refresh:fail:${accountId}`),
+    ]);
+  } catch {
+    // ignore redis errors
+  }
+
+  logger.info({ accountId, expiresAt }, '[Bling] manual tokens saved');
+  return c.json({ ok: true, expiresAt });
+});
+
+// ── GET /bling/client-credentials ────────────────────
+// Retorna client_id + client_secret pro browser fazer exchange manual.
+// CUIDADO: client_secret eh sensivel. So permitido pra owner/admin
+// autenticado. Usado apenas no flow manual de OAuth.
+bling.get('/client-credentials', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountOwnerOrAdmin(user.id, accountId);
+
+  const cred = await db.query.blingCredentials.findFirst({
+    where: eq(blingCredentials.accountId, accountId),
+  });
+  if (!cred?.clientId || !cred.clientSecret) {
+    throw new NotFoundError('Credentials not configured');
+  }
+  return c.json({ clientId: cred.clientId, clientSecret: cred.clientSecret });
+});
+
 // ── POST /bling/sync ─────────────────────────────────
 // Dispara sync paginado inline. Pode demorar 30s-2min.
 bling.post('/sync', requireAuth, async (c) => {

@@ -104,6 +104,103 @@ export default function BlingPage() {
     window.location.href = `${API_BASE_URL}/bling/auth/start?accountId=${accountId}`;
   }
 
+  /**
+   * Browser-side OAuth flow: bypass Cloudflare rate limit do servidor.
+   * O exchange roda no browser do user (IP residencial limpo).
+   */
+  async function handleConnectManual() {
+    if (!accountId) return;
+    setError(null);
+    setNotice(null);
+    try {
+      // Pega client_id do backend
+      const creds = await api.get<{ clientId: string; clientSecret: string }>(
+        `/bling/client-credentials?accountId=${accountId}`,
+      );
+
+      // Gera state CSRF + salva em sessionStorage
+      const state =
+        crypto.getRandomValues(new Uint8Array(16)).reduce((acc, b) => acc + b.toString(16).padStart(2, '0'), '');
+      sessionStorage.setItem('bling_manual_state', state);
+      sessionStorage.setItem('bling_manual_account', accountId);
+      sessionStorage.setItem('bling_manual_client_id', creds.clientId);
+      sessionStorage.setItem('bling_manual_client_secret', creds.clientSecret);
+
+      // Redireciona pro authorize do Bling
+      const url = new URL('https://www.bling.com.br/Api/v3/oauth/authorize');
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('client_id', creds.clientId);
+      url.searchParams.set('state', state);
+      window.location.href = url.toString();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Falha ao iniciar OAuth manual');
+    }
+  }
+
+  // Detecta callback OAuth manual (?code=...&state=...) e faz exchange no browser
+  useEffect(() => {
+    const code = searchParams.get('code');
+    const stateParam = searchParams.get('state');
+    if (!code || !stateParam) return;
+
+    const savedState = sessionStorage.getItem('bling_manual_state');
+    const savedAccount = sessionStorage.getItem('bling_manual_account');
+    const savedClientId = sessionStorage.getItem('bling_manual_client_id');
+    const savedSecret = sessionStorage.getItem('bling_manual_client_secret');
+
+    if (!savedState || savedState !== stateParam) {
+      setError('State mismatch (CSRF)');
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (!savedAccount || !savedClientId || !savedSecret) {
+      setError('Sessao OAuth expirou. Tente novamente.');
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    // Limpa session
+    ['bling_manual_state', 'bling_manual_account', 'bling_manual_client_id', 'bling_manual_client_secret']
+      .forEach((k) => sessionStorage.removeItem(k));
+
+    setNotice('Trocando code por tokens (no seu browser)...');
+    const basic = btoa(`${savedClientId}:${savedSecret}`);
+    fetch('https://api.bling.com.br/Api/v3/oauth/token', {
+      method: 'POST',
+      headers: {
+        Accept: '1.0',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: `Basic ${basic}`,
+      },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code }),
+    })
+      .then(async (r) => {
+        const text = await r.text();
+        if (!r.ok) throw new Error(`Bling ${r.status}: ${text.slice(0, 200)}`);
+        return JSON.parse(text) as {
+          access_token: string;
+          refresh_token: string;
+          expires_in: number;
+        };
+      })
+      .then(async (tokens) => {
+        await api.post('/bling/tokens/manual', {
+          accountId: savedAccount,
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresIn: tokens.expires_in,
+        });
+        setNotice('Conectado com sucesso (via browser)! Pode sincronizar.');
+        setSearchParams({}, { replace: true });
+        loadStatus();
+      })
+      .catch((e) => {
+        setError(`OAuth manual falhou: ${(e as Error).message}`);
+        setSearchParams({}, { replace: true });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   async function handleSync() {
     if (!accountId) return;
     setSyncing(true);
@@ -256,14 +353,30 @@ export default function BlingPage() {
           <p className="text-sm text-muted-foreground">
             Voce sera redirecionado pro Bling pra autorizar o acesso. Apos autorizar, volta pra essa pagina.
           </p>
-          <button
-            onClick={handleConnect}
-            disabled={!status?.hasCredentials}
-            className="px-6 py-3 rounded-lg gradient-pink text-white font-semibold
-                       disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {status?.connected ? 'Reconectar com Bling' : 'Conectar com Bling'}
-          </button>
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleConnect}
+              disabled={!status?.hasCredentials}
+              className="px-6 py-3 rounded-lg gradient-pink text-white font-semibold
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {status?.connected ? 'Reconectar com Bling' : 'Conectar com Bling'}
+            </button>
+            <button
+              onClick={handleConnectManual}
+              disabled={!status?.hasCredentials}
+              className="px-6 py-3 rounded-lg border border-border text-foreground
+                         hover:bg-card transition-colors text-sm
+                         disabled:opacity-40 disabled:cursor-not-allowed"
+              title="OAuth via browser (contorna rate-limit do servidor)"
+            >
+              Conectar (modo browser)
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Use "modo browser" se o servidor estiver com rate-limit (Cloudflare 1015).
+            O token exchange roda no seu browser (IP residencial limpo).
+          </p>
         </div>
 
         {/* Step 3: Sync */}
