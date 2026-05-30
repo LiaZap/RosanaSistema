@@ -33,6 +33,7 @@ import { classifyConversation } from './intent-classifier.js';
 import { fetchMessageMediaBase64 } from './evolution-media.js';
 import { classifyImage } from './gemini-vision.js';
 import { updateContactMemory } from './contact-memory.js';
+import { visionPerContact, outboundPerContact } from './rate-limit.js';
 import { logger } from './logger.js';
 
 /** Corrobora comprovante via keywords no caption */
@@ -75,6 +76,16 @@ async function processInbound(data: InboundJobData): Promise<void> {
   let skipBuffer = false;
 
   if (mediaPayload) {
+    // Sprint 11: rate-limit vision por contato (max 5/min)
+    const rl = await visionPerContact(contactId);
+    if (!rl.allowed) {
+      logger.warn(
+        { contactId, current: rl.current, limit: rl.limit },
+        '[Inbound] vision rate-limited - skipping classification',
+      );
+      // Vai pro buffer como texto generico
+      if (!text) text = '[Cliente mandou uma imagem]';
+    } else {
     try {
       const media = await fetchMessageMediaBase64({
         accountId,
@@ -132,6 +143,7 @@ async function processInbound(data: InboundJobData): Promise<void> {
       );
       if (!text) text = '[Cliente mandou uma imagem]';
     }
+    } // end else (allowed)
   }
 
   // 1. Persiste user message
@@ -402,6 +414,16 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
  */
 async function processOutbound(data: OutboundJobData): Promise<void> {
   const { accountId, phoneNumber, text, imageUrl, mediaUrl, mediaType, caption } = data;
+
+  // Sprint 11: rate-limit outbound por contato (max 30/min)
+  const rl = await outboundPerContact(phoneNumber);
+  if (!rl.allowed) {
+    logger.warn(
+      { phoneNumber, current: rl.current, limit: rl.limit },
+      '[Outbound] rate-limited - skipping send',
+    );
+    return;
+  }
 
   const settings = await getEvolutionSettings(accountId);
   const session = await db.query.whatsappSessions.findFirst({

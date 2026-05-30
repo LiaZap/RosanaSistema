@@ -20,6 +20,7 @@ import cronRoutes from './routes/cron.js';
 import knowledgeRoutes from './routes/knowledge.js';
 import mediaProxyRoutes from './routes/media-proxy.js';
 import mediaRoutes from './routes/media.js';
+import metricsRoutes from './routes/metrics.js';
 
 const app = new Hono();
 
@@ -49,6 +50,7 @@ app.route('/cron', cronRoutes);
 app.route('/knowledge', knowledgeRoutes);
 app.route('/library', mediaRoutes);
 app.route('/media', mediaProxyRoutes);
+app.route('', metricsRoutes);
 app.route('', healthRoutes);
 
 // ── Bootstrap ────────────────────────────────────────
