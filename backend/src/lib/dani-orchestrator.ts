@@ -64,14 +64,17 @@ export interface DaniResult {
 }
 
 /**
- * Parseia a resposta esperando JSON { should_reply, message, reasoning }.
+ * Parseia a resposta da DANI.
  *
- * Estrategia defensiva pra evitar silencio acidental:
- *  - JSON valido + should_reply=false: respeita (silencio explicito)
- *  - JSON valido + should_reply=true: usa message
- *  - Texto nao-JSON: trata como resposta direta (fallback)
- *  - Resposta VAZIA: assume erro/safety block do Gemini -> shouldReply=true
- *    + msg amigavel (preferir falsa-positiva sobre silencio total inesperado)
+ * Estrategia: TEXTO PURO eh o caminho feliz. JSON vira excecao defensiva
+ * pra retro-compatibilidade com prompts customizados antigos que pedem JSON.
+ *
+ * - Resposta vazia (string=='' ou whitespace): silencio absoluto (esperado
+ *   em comprovantes, despedidas curtas, conversa em modo human)
+ * - Texto comum: resposta direta ao cliente
+ * - JSON valido com should_reply: retro-compat, respeita o campo
+ * - JSON malformado: STRIP do JSON (remove '{', '"should_reply"' etc) e
+ *   extrai message. Anti-vazamento de JSON na bubble.
  */
 function parseJsonResponse(raw: string): {
   shouldReply: boolean;
@@ -81,40 +84,70 @@ function parseJsonResponse(raw: string): {
 } {
   const trimmed = raw.trim();
 
-  // Resposta VAZIA = Gemini provavelmente bloqueou ou falhou.
-  // NAO silencia o cliente sem motivo claro - retorna msg generica.
+  // Vazio = silencio absoluto intencional
   if (!trimmed) {
     return {
-      shouldReply: true,
-      message: 'Pode me contar mais? Nao consegui entender sua mensagem direito.',
-      reasoning: 'fallback: empty response from LLM (safety block or generation failure)',
-      fellBack: true,
+      shouldReply: false,
+      message: '',
+      reasoning: 'empty response (intentional silence)',
+      fellBack: false,
     };
   }
 
-  // Tenta extrair JSON entre ```json ... ``` se vier em markdown
+  // Se nao parece JSON, retorna texto direto (caminho feliz - 95% dos casos)
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('```')) {
+    return {
+      shouldReply: true,
+      message: trimmed,
+      reasoning: 'plain text response',
+      fellBack: false,
+    };
+  }
+
+  // Tenta extrair JSON entre fences se vier em markdown
   const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
   const jsonCandidate = fenced ? fenced[1].trim() : trimmed;
 
   try {
     const obj = JSON.parse(jsonCandidate);
-    if (typeof obj === 'object' && obj !== null && 'should_reply' in obj) {
+    if (typeof obj === 'object' && obj !== null) {
+      const shouldReply = 'should_reply' in obj ? Boolean(obj.should_reply) : true;
+      const msg = typeof obj.message === 'string' ? obj.message : '';
       return {
-        shouldReply: Boolean(obj.should_reply),
-        message: typeof obj.message === 'string' ? obj.message : '',
-        reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : '',
+        shouldReply,
+        message: msg,
+        reasoning: typeof obj.reasoning === 'string' ? obj.reasoning : 'parsed JSON',
         fellBack: false,
       };
     }
   } catch {
-    // ignore
+    // JSON malformado / truncado - vai pro recovery abaixo
   }
 
-  // Fallback: texto puro (Gemini ignorou o JSON mas mandou texto util)
+  // Recovery: JSON malformado. Tenta extrair valor de "message" via regex
+  // pra nao vazar { } e chaves pro cliente.
+  const messageMatch = trimmed.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (messageMatch) {
+    // Unescape basic JSON strings
+    const recovered = messageMatch[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+    return {
+      shouldReply: true,
+      message: recovered,
+      reasoning: 'fallback: recovered message from malformed JSON',
+      fellBack: true,
+    };
+  }
+
+  // Ultima saida: pega texto entre primeiro " e ultimo "
+  // ou retorna msg generica se nada extrair
+  const fallbackText = trimmed.replace(/[{}"\[\]]/g, '').replace(/should_reply.*?,/g, '').trim();
   return {
     shouldReply: true,
-    message: trimmed,
-    reasoning: 'fallback: response was not valid JSON, treating as plain text',
+    message: fallbackText.length > 5 ? fallbackText : 'Pode me contar mais sobre o que voce esta procurando?',
+    reasoning: 'fallback: stripped JSON syntax',
     fellBack: true,
   };
 }

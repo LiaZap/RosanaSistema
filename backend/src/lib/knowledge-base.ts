@@ -306,20 +306,20 @@ Formatacao WhatsApp:
   // ── OUTPUT RULES (always include) ──
   {
     category: 'output_rules',
-    title: 'Output JSON estruturado',
-    content: `Sua resposta DEVE ser sempre JSON valido:
-{
-  "should_reply": boolean,
-  "message": "texto que o cliente vai ler no WhatsApp",
-  "reasoning": "explicacao curta da decisao (interno)"
-}
+    title: 'Formato da resposta',
+    content: `Responda APENAS com o texto que vai pro cliente. Nada de JSON, narracoes, prefixos ou meta-comentarios.
 
-CRITICAS:
-- "message" contem APENAS o texto que o cliente vai LER. Sem narracoes.
-- NUNCA escreva "(permanece em silencio)" ou "(aguardar)" no message. Se nao ha nada a dizer: message="" + should_reply=false.
-- NUNCA use colchetes [ ] no message pra descrever comportamento.
-- Tudo que NAO eh fala vai no reasoning.`,
-    tags: ['output', 'json'],
+NUNCA escreva:
+- "(permanece em silencio)" ou "(aguardando)"
+- "[SILENCIO]" ou descricoes de comportamento entre [ ]
+- "should_reply: true/false" ou qualquer estrutura JSON
+- Prefixos tipo "DANI:", "Resposta:", "Texto:"
+- Aspas envolvendo a resposta inteira
+
+Se nao ha nada a dizer (cliente despediu, comprovante, ja tem humano respondendo): retorna string VAZIA (zero caracteres).
+
+Caso contrario: apenas o texto que o cliente vai LER no WhatsApp, em PT-BR, formato natural.`,
+    tags: ['output', 'formato'],
     priority: 100,
     alwaysInclude: true,
   },
