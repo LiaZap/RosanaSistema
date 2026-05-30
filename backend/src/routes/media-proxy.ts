@@ -302,6 +302,43 @@ media.post('/refresh/:productId', async (c) => {
   }
 });
 
+// ── POST /media/init-dani/:accountId ─────────────────
+// Cria nina_settings com defaults pra DANI ficar ativa
+media.post('/init-dani/:accountId', async (c) => {
+  const accountId = c.req.param('accountId');
+  try {
+    const { ninaSettings } = await import('../db/schema.js');
+    const existing = await db.query.ninaSettings.findFirst({
+      where: eq(ninaSettings.accountId, accountId),
+    });
+    if (existing) {
+      // Garante isActive=true se ja existe
+      await db
+        .update(ninaSettings)
+        .set({ isActive: true, updatedAt: new Date() })
+        .where(eq(ninaSettings.accountId, accountId));
+      return c.json({ ok: true, action: 'updated', wasActive: existing.isActive });
+    }
+    // Cria com defaults
+    await db.insert(ninaSettings).values({
+      accountId,
+      sdrName: 'DANI',
+      companyName: 'Filhos com Estilo',
+      isActive: true,
+      aiModelMode: 'flash',
+      bufferWindowMs: 15000,
+      bufferMaxMs: 60000,
+      responseDelayMin: 1,
+      responseDelayMax: 3,
+      messageBreakingEnabled: false,
+      audioResponseEnabled: false,
+    });
+    return c.json({ ok: true, action: 'created' });
+  } catch (err) {
+    return c.json({ error: (err as Error).message, stack: (err as Error).stack?.slice(0, 500) }, 500);
+  }
+});
+
 // ── GET /media/whatsapp-pipeline-test ────────────────
 // Diagnostico completo do pipeline WhatsApp pra producao
 media.get('/whatsapp-pipeline-test', async (c) => {
