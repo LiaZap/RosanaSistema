@@ -35,6 +35,8 @@ const settingsUpdateSchema = z.object({
   companyName: z.string().min(1).max(255).optional(),
   systemPromptOverride: z.string().max(50_000).nullable().optional(),
   aiModelMode: z.enum(['flash', 'pro', 'preview', 'lite']).optional(),
+  bufferWindowMs: z.number().int().min(1000).max(120_000).optional(),
+  bufferMaxMs: z.number().int().min(5_000).max(300_000).optional(),
 });
 
 /** Garante que o user logado e membro ativo da account */

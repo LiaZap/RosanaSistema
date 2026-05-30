@@ -15,6 +15,13 @@
       "when": 1780090313456,
       "tag": "0001_groovy_loki",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780102654924,
+      "tag": "0002_graceful_blockbuster",
+      "breakpoints": true
     }
   ]
 }

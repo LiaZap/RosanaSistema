@@ -128,12 +128,15 @@ export const messages = pgTable('messages', {
   mediaUrl: text('media_url'),
   whatsappMessageId: varchar('whatsapp_message_id', { length: 100 }),
   processedByNina: boolean('processed_by_nina').default(false).notNull(),
+  // Sprint 1: tracking de buffer
+  bufferWindowId: uuid('buffer_window_id'),
   metadata: jsonb('metadata').$type<Record<string, unknown>>().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   conversationIdx: index('messages_conversation_idx').on(t.conversationId),
   accountIdx: index('messages_account_idx').on(t.accountId),
   createdAtIdx: index('messages_created_at_idx').on(t.createdAt),
+  bufferIdx: index('messages_buffer_idx').on(t.bufferWindowId),
 }));
 
 // ── AI Settings ──────────────────────────────────────
@@ -153,6 +156,9 @@ export const ninaSettings = pgTable('nina_settings', {
   audioResponseEnabled: boolean('audio_response_enabled').default(false).notNull(),
   elevenlabsApiKey: text('elevenlabs_api_key'),
   elevenlabsVoiceId: varchar('elevenlabs_voice_id', { length: 100 }),
+  // Sprint 1: buffer de mensagens
+  bufferWindowMs: integer('buffer_window_ms').default(15000).notNull(),
+  bufferMaxMs: integer('buffer_max_ms').default(60000).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

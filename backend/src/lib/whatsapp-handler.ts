@@ -1,15 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { contacts, conversations, whatsappSessions } from '../db/schema.js';
-import { loadHistory, saveMessage } from './dani-conversations.js';
-import { processDaniMessage } from './dani-orchestrator.js';
-import {
-  getEvolutionSettings,
-  sendMediaMessage,
-  sendTextMessage,
-  upsertSessionStatus,
-} from './evolution-client.js';
-import { transformedUrl } from './cloudinary-client.js';
+import { contacts, conversations } from '../db/schema.js';
+import { saveMessage } from './dani-conversations.js';
+import { upsertSessionStatus } from './evolution-client.js';
+import { inboundQueue } from './queues.js';
 import { logger } from './logger.js';
 
 /**
@@ -148,97 +142,44 @@ export async function handleMessageUpsert(
     conv = created;
   }
 
-  // 3. Salva mensagem do user
-  await saveMessage({
-    conversationId: conv.id,
-    accountId,
-    fromType: 'user',
-    content: text,
-  });
-
-  // Se humano assumiu, nao responde
+  // Se humano assumiu, salva mas nao processa
   if (conv.status !== 'nina') {
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'user',
+      content: text,
+    });
     return { skipped: `status=${conv.status}`, contactId: contact.id, conversationId: conv.id };
   }
 
-  // 4. Carrega historico (depois da mensagem nova ja salva)
-  // NOTA: salvamos antes pra historia ficar completa em caso de falha do AI
-  const history = await loadHistory(conv.id, 30);
-  // Remove a ultima mensagem do user (ja vamos enviar via processDaniMessage)
-  if (history[history.length - 1]?.role === 'user' && history[history.length - 1]?.text === text) {
-    history.pop();
-  }
-
-  // 5. Chama DANI (passa contactId pras tools precisarem dele)
-  let daniResult;
-  try {
-    daniResult = await processDaniMessage(text, {
+  // Sprint 1: enfileira em vez de processar inline.
+  // Worker INBOUND persiste msg + buffer push + schedule ai-reply.
+  await inboundQueue.add(
+    'persist',
+    {
       accountId,
-      contactId: contact.id,
-      history,
-    });
-  } catch (err) {
-    logger.error({ accountId, err: (err as Error).message }, '[WhatsApp] DANI failed');
-    return {
-      skipped: `dani-error: ${(err as Error).message}`,
-      contactId: contact.id,
       conversationId: conv.id,
-    };
-  }
+      contactId: contact.id,
+      phoneNumber: phone,
+      text,
+      whatsappMessageId: data.key.id,
+    },
+    {
+      jobId: data.key.id ? `inbound:${data.key.id}` : undefined, // idempotente
+      removeOnComplete: { age: 3600 },
+    },
+  );
 
-  // 6. Salva resposta da DANI
-  await saveMessage({
-    conversationId: conv.id,
-    accountId,
-    fromType: 'nina',
-    content: daniResult.reply,
-    processedByNina: true,
-  });
-
-  // 7. Envia via Evolution (primeiro foto se houver, depois texto)
-  try {
-    const settings = await getEvolutionSettings(accountId);
-    const session = await db.query.whatsappSessions.findFirst({
-      where: eq(whatsappSessions.accountId, accountId),
-    });
-    if (!session) {
-      logger.warn({ accountId }, '[WhatsApp] sem session - nao envia reply');
-      return {
-        contactId: contact.id,
-        conversationId: conv.id,
-        daniReplied: false,
-        skipped: 'no whatsapp session',
-      };
-    }
-
-    // Phase 5: se ha attachment imagem do Cloudinary, manda foto com caption
-    const firstImage = daniResult.attachments.find((a) => a.type === 'image');
-    if (firstImage && firstImage.url.includes('res.cloudinary.com')) {
-      // Foto com texto da DANI como caption (1 mensagem)
-      await sendMediaMessage({
-        settings,
-        instanceName: session.instanceName,
-        phoneNumber: phone,
-        mediaUrl: transformedUrl(firstImage.url),
-        caption: daniResult.reply,
-        mediaType: 'image',
-      });
-    } else {
-      await sendTextMessage({
-        settings,
-        instanceName: session.instanceName,
-        phoneNumber: phone,
-        text: daniResult.reply,
-      });
-    }
-  } catch (err) {
-    logger.error({ accountId, err: (err as Error).message }, '[WhatsApp] send failed');
-  }
+  logger.info(
+    { accountId, conversationId: conv.id, phone, msgId: data.key.id },
+    '[WhatsApp] enqueued inbound',
+  );
 
   return {
     contactId: contact.id,
     conversationId: conv.id,
-    daniReplied: true,
+    daniReplied: false, // ai-reply roda async, retorno aqui eh imediato
   };
 }
 

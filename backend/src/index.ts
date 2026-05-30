@@ -5,6 +5,8 @@ import { rawQuery, closePool } from './db/client.js';
 import { logger } from './lib/logger.js';
 import { errorHandler } from './middleware/error.js';
 import { startCronJobs } from './lib/cron-scheduler.js';
+import { startWorkers, stopWorkers } from './lib/workers.js';
+import { closeQueues } from './lib/queues.js';
 import authRoutes from './routes/auth.js';
 import healthRoutes from './routes/health.js';
 import daniRoutes from './routes/dani.js';
@@ -61,6 +63,13 @@ async function main() {
     logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/* /pipeline/* /appointments/* /cron/*');
   });
 
+  // Sprint 1: BullMQ workers (inbound buffer / ai-reply / outbound)
+  if (process.env.DISABLE_WORKERS !== 'true') {
+    startWorkers();
+  } else {
+    logger.info('[API] BullMQ workers disabled via DISABLE_WORKERS env');
+  }
+
   // Start cron jobs (Bling sync 5h + Cloudinary upload 1h)
   if (process.env.DISABLE_CRON !== 'true') {
     startCronJobs();
@@ -73,6 +82,8 @@ async function main() {
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received — shutting down`);
     server.close();
+    await stopWorkers();
+    await closeQueues();
     await closePool();
     process.exit(0);
   };
