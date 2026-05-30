@@ -1,7 +1,8 @@
 import { db } from '../db/client.js';
-import { ninaSettings } from '../db/schema.js';
+import { contacts, ninaSettings } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { buildDaniSystemPrompt } from './dani-prompt.js';
+import { formatMemoryForPrompt, type ClientMemory } from './contact-memory.js';
 import {
   generateDaniReply,
   type ChatTurn,
@@ -126,12 +127,32 @@ export async function processDaniMessage(
     maxChunks: 25,
   });
 
-  const systemPrompt = buildDaniSystemPrompt({
+  // Sprint 8: carrega memoria do contato (se houver)
+  let memoryText = '';
+  if (ctx.contactId) {
+    try {
+      const contact = await db.query.contacts.findFirst({
+        where: eq(contacts.id, ctx.contactId),
+      });
+      if (contact?.clientMemory) {
+        memoryText = formatMemoryForPrompt(contact.clientMemory as ClientMemory);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  let systemPrompt = buildDaniSystemPrompt({
     systemPromptOverride: settings?.systemPromptOverride ?? null,
     sdrName: settings?.sdrName ?? null,
     companyName: settings?.companyName ?? null,
     kbChunks,
   });
+
+  // Anexa memoria se houver
+  if (memoryText) {
+    systemPrompt += memoryText;
+  }
 
   logger.info(
     {

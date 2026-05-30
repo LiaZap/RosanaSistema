@@ -32,6 +32,7 @@ import { transformedUrl } from './cloudinary-client.js';
 import { classifyConversation } from './intent-classifier.js';
 import { fetchMessageMediaBase64 } from './evolution-media.js';
 import { classifyImage } from './gemini-vision.js';
+import { updateContactMemory } from './contact-memory.js';
 import { logger } from './logger.js';
 
 /** Corrobora comprovante via keywords no caption */
@@ -370,6 +371,14 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
   // logamos warn pra ter visibilidade em producao.
   classifyConversation(conversationId).catch((err) =>
     logger.warn({ err: (err as Error).message, conversationId }, '[AiReply] background classification failed'),
+  );
+
+  // 13. Sprint 8: atualiza memoria do contato async
+  updateContactMemory({ conversationId, contactId }).catch((err) =>
+    logger.warn(
+      { err: (err as Error).message, conversationId, contactId },
+      '[AiReply] background memory update failed',
+    ),
   );
 }
 
