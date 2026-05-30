@@ -234,8 +234,17 @@ export interface BlingProductRaw {
 }
 
 /**
- * Pega 1 produto pelo blingId. Retorna URL de imagem ATUAL (pre-signed
- * URLs do S3 Bling expiram, entao precisamos buscar fresca antes de baixar).
+ * Pega 1 produto pelo blingId. Retorna URL de imagem ATUAL.
+ *
+ * Schema oficial da Bling API v3:
+ *   data.midia.imagens.externas[].link            - URL externa (CDN da loja)
+ *   data.midia.imagens.internas[].linkMiniatura   - URL S3 pre-signed (1mes-1ano)
+ *   data.midia.imagens.internas[].validade        - data ISO de expiracao
+ *   data.imagemURL                                 - campo legacy V2
+ *
+ * Ordem de prioridade: externas > internas (linkMiniatura) > imagemURL.
+ * Externas sao mais estaveis (CDN proprio do lojista), internas tem validade
+ * limitada mas ainda servem pra baixar e cachear no MinIO.
  */
 export async function fetchFreshProductImageUrl(opts: {
   accessToken: string;
@@ -250,23 +259,52 @@ export async function fetchFreshProductImageUrl(opts: {
   });
 
   if (!res.ok) {
+    logger.warn({ blingId: opts.blingId, status: res.status }, '[Bling] fetchProductImage failed');
     return null;
   }
 
   const json = (await res.json()) as {
     data?: {
       imagemURL?: string;
-      midia?: { imagens?: { externas?: Array<{ link?: string }> } };
+      midia?: {
+        imagens?: {
+          externas?: Array<{ link?: string }>;
+          internas?: Array<{ linkMiniatura?: string; validade?: string }>;
+        };
+      };
     };
   };
 
-  // V3 nova: data.midia.imagens.externas[0].link
-  const fromMidia = json.data?.midia?.imagens?.externas?.[0]?.link;
-  if (fromMidia) return fromMidia;
+  // 1. Externas (mais estavel - CDN do lojista)
+  const externa = json.data?.midia?.imagens?.externas?.find((e) => e.link)?.link;
+  if (externa) {
+    logger.debug({ blingId: opts.blingId, source: 'externa' }, '[Bling] image URL resolved');
+    return externa;
+  }
 
-  // V3 antiga: data.imagemURL
-  if (json.data?.imagemURL) return json.data.imagemURL;
+  // 2. Internas: pre-signed S3 com validade. Filtra os ainda validos.
+  const now = Date.now();
+  const interna = json.data?.midia?.imagens?.internas?.find((i) => {
+    if (!i.linkMiniatura) return false;
+    if (!i.validade) return true; // sem validade declarada, tenta
+    const expira = Date.parse(i.validade);
+    return Number.isFinite(expira) ? expira > now : true;
+  });
+  if (interna?.linkMiniatura) {
+    logger.debug(
+      { blingId: opts.blingId, source: 'interna', validade: interna.validade },
+      '[Bling] image URL resolved (linkMiniatura)',
+    );
+    return interna.linkMiniatura;
+  }
 
+  // 3. Campo legacy V2
+  if (json.data?.imagemURL) {
+    logger.debug({ blingId: opts.blingId, source: 'imagemURL' }, '[Bling] image URL resolved (legacy)');
+    return json.data.imagemURL;
+  }
+
+  logger.info({ blingId: opts.blingId }, '[Bling] no image URL found in product');
   return null;
 }
 
