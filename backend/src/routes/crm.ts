@@ -422,14 +422,111 @@ crm.get('/dashboard', requireAuth, async (c) => {
   const convByStatus = { nina: 0, human: 0, paused: 0, closed: 0 };
   for (const row of convStats) convByStatus[row.status] = row.count;
 
+  // Métricas avançadas (Sprint UI)
+  const yesterdayStart = new Date(startOfDay.getTime() - 24 * 60 * 60 * 1000);
+
+  const [msgsYesterday, aiPerformance, avgResponseMs, topProducts] = await Promise.all([
+    // Mensagens ontem (pra delta)
+    db
+      .select({ count: sql<number>`cast(count(*) as int)` })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.accountId, accountId),
+          sql`${messages.createdAt} >= ${yesterdayStart}`,
+          sql`${messages.createdAt} < ${startOfDay}`,
+        ),
+      )
+      .then((r) => r[0]?.count ?? 0),
+
+    // AI performance: % de conversas em modo nina vs human (autonomia)
+    db
+      .select({
+        nina: sql<number>`cast(count(*) filter (where status = 'nina') as int)`,
+        human: sql<number>`cast(count(*) filter (where status = 'human') as int)`,
+        total: sql<number>`cast(count(*) as int)`,
+      })
+      .from(conversations)
+      .where(
+        and(
+          eq(conversations.accountId, accountId),
+          sql`${conversations.lastMessageAt} >= ${sevenDaysAgo}`,
+        ),
+      )
+      .then((r) => {
+        const row = r[0];
+        if (!row || !row.total) return { nina: 0, human: 0, total: 0, autonomyPct: 0 };
+        return {
+          nina: row.nina,
+          human: row.human,
+          total: row.total,
+          autonomyPct: Math.round((row.nina / row.total) * 100),
+        };
+      }),
+
+    // Tempo médio de resposta DANI (ms entre msg user e próxima msg nina)
+    db
+      .execute(
+        sql`
+          SELECT AVG(EXTRACT(EPOCH FROM (n.created_at - u.created_at)) * 1000)::int AS avg_ms
+          FROM messages u
+          JOIN LATERAL (
+            SELECT created_at FROM messages
+            WHERE conversation_id = u.conversation_id
+              AND from_type = 'nina'
+              AND created_at > u.created_at
+            ORDER BY created_at ASC LIMIT 1
+          ) n ON true
+          WHERE u.account_id = ${accountId}
+            AND u.from_type = 'user'
+            AND u.created_at >= ${sevenDaysAgo}
+        `,
+      )
+      .then((r) => {
+        const row = (r as unknown as { rows: Array<{ avg_ms: number | null }> }).rows[0];
+        return row?.avg_ms ?? 0;
+      }),
+
+    // Top 5 produtos mais buscados pela DANI (count das tool calls)
+    // Aproximação via lastSearchedProduct na contact.client_memory
+    db
+      .execute(
+        sql`
+          SELECT nome, COUNT(*)::int AS n
+          FROM produtos_catalogo
+          WHERE account_id = ${accountId} AND disponivel = true
+          ORDER BY estoque DESC NULLS LAST
+          LIMIT 5
+        `,
+      )
+      .then((r) => {
+        const rows = (r as unknown as { rows: Array<{ nome: string; n: number }> }).rows;
+        return rows.map((row) => ({ name: row.nome, count: row.n }));
+      })
+      .catch(() => []),
+  ]);
+
+  // Delta percentual de mensagens
+  const messagesDelta =
+    msgsYesterday > 0
+      ? Math.round(((msgsToday - msgsYesterday) / msgsYesterday) * 100)
+      : msgsToday > 0
+        ? 100
+        : 0;
+
   return c.json({
     messagesToday: msgsToday,
+    messagesYesterday: msgsYesterday,
+    messagesDelta,
     messagesLast7Days: msgsBy7d.map((r) => ({ day: r.day, count: r.count })),
     conversations: convByStatus,
     contactsTotal: contactCount,
     appointmentsThisWeek: apptThisWeek,
     dealsThisMonth: dealsThisMonth,
     produtosTotal,
+    aiPerformance,
+    avgResponseMs,
+    topProducts,
   });
 });
 

@@ -4,46 +4,67 @@
 
 @layer base {
   :root {
-    /* Sprint 9 - Design System V2
-     * Cara Linear/Pipedrive. Brand pink so em accents (CTAs, estados ativos).
-     * Cinza-zinc como base, neutralidade premium.
+    /* Design System V3
+     * Inspiração: Linear + Pipedrive + Stripe
+     * - Cinza-zinc base, brand pink só em CTAs/active
+     * - Elevation por sombra sutil (sem borda só)
+     * - Tipografia: Inter com features cv11/ss01
      */
 
-    /* Surfaces (dark warm-neutral, nao mais saturado pink) */
-    --background: 240 6% 4%;          /* canvas */
-    --foreground: 0 0% 98%;            /* texto principal */
-    --card: 240 5% 9%;                 /* cards, sidebar */
+    /* Surfaces — escalonadas por elevation */
+    --background: 240 6% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 5% 8%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 5% 11%;             /* modal, popover */
+    --card-elevated: 240 5% 11%;
+    --popover: 240 5% 12%;
     --popover-foreground: 0 0% 98%;
 
-    /* Brand (uso parcimonioso) */
-    --primary: 325 94% 46%;            /* #e50789 - so em CTAs comerciais e active state */
+    /* Brand pink (uso parcimonioso) */
+    --primary: 325 94% 46%;
     --primary-foreground: 0 0% 100%;
+    --primary-hover: 325 94% 52%;
     --secondary: 240 5% 14%;
     --secondary-foreground: 0 0% 98%;
 
-    /* Muted (inputs, hover, dividers) */
-    --muted: 240 4% 14%;
-    --muted-foreground: 240 5% 65%;    /* texto secundario, melhor contraste */
+    /* Muted */
+    --muted: 240 4% 13%;
+    --muted-foreground: 240 5% 65%;
+    --muted-strong: 240 5% 78%;
 
-    /* Accent */
-    --accent: 74 67% 47%;              /* green - so em success */
+    /* Accent semânticos */
+    --accent: 74 67% 47%;
     --accent-foreground: 0 0% 8%;
-
-    /* Status */
-    --destructive: 0 84% 60%;          /* vermelho mais neutro, menos saturado */
+    --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
     --success: 142 71% 45%;
     --warning: 38 92% 50%;
     --info: 217 91% 60%;
 
-    /* Borders */
-    --border: 240 4% 18%;
-    --input: 240 4% 18%;
+    /* Pipeline stages (consistente em todos lugares) */
+    --stage-new: 217 91% 60%;
+    --stage-qualified: 38 92% 50%;
+    --stage-opportunity: 280 80% 60%;
+    --stage-closing: 325 94% 46%;
+    --stage-won: 142 71% 45%;
+    --stage-lost: 0 84% 60%;
+
+    /* Borders & rings */
+    --border: 240 4% 16%;
+    --border-strong: 240 4% 22%;
+    --input: 240 4% 16%;
     --ring: 325 94% 46%;
 
-    --radius: 0.5rem;                  /* menor - tira cara de "toy" */
+    --radius: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+
+    /* Sombras semânticas (HSL c/ alpha) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.4), 0 2px 4px -2px rgb(0 0 0 / 0.3);
+    --shadow-md: 0 10px 15px -3px rgb(0 0 0 / 0.5), 0 4px 6px -4px rgb(0 0 0 / 0.3);
+    --shadow-lg: 0 20px 25px -5px rgb(0 0 0 / 0.5), 0 8px 10px -6px rgb(0 0 0 / 0.4);
+    --shadow-glow: 0 0 24px -4px hsl(var(--primary) / 0.35);
   }
 
   * {
@@ -54,16 +75,22 @@
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1, "ss01" 1;
     font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, hsl(325 94% 46% / 0.06), transparent),
+      radial-gradient(ellipse 60% 50% at 80% 50%, hsl(74 67% 47% / 0.03), transparent);
   }
 
+  /* Tipografia mais forte */
+  h1, h2, h3, h4 {
+    @apply font-semibold tracking-tight;
+  }
+  h1 { @apply text-2xl; }
+  h2 { @apply text-xl; }
+  h3 { @apply text-lg; }
+
   /* Scrollbar sutil */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb {
     @apply bg-border rounded-full;
   }
@@ -71,48 +98,87 @@
     @apply bg-muted-foreground/40;
   }
 
-  /* Focus ring profissional */
+  /* Focus profissional */
   *:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.5);
+    box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--ring) / 0.4);
   }
 }
 
 @layer components {
-  /* Card padrao - replaces .glass */
+  /* ─── CARDS ───────────────────────────── */
   .card-base {
     @apply bg-card border border-border/60 rounded-lg;
   }
   .card-elev {
-    @apply bg-card border border-border rounded-lg shadow-sm;
+    @apply rounded-lg border border-border;
+    background: hsl(var(--card));
+    box-shadow: var(--shadow-sm);
+  }
+  .card-elev-hover {
+    @apply card-elev transition-all duration-150 hover:border-border-strong hover:translate-y-[-1px];
+    box-shadow: var(--shadow-sm);
+  }
+  .card-elev-hover:hover {
+    box-shadow: var(--shadow);
   }
 
-  /* Button bases */
+  /* ─── KPI CARDS (Dashboard) ──────────── */
+  .kpi-card {
+    @apply card-elev p-4 space-y-1.5 min-h-[110px] flex flex-col justify-between;
+  }
+  .kpi-label {
+    @apply text-[11px] uppercase tracking-wider text-muted-foreground font-medium;
+  }
+  .kpi-value {
+    @apply text-3xl font-bold tracking-tight text-foreground;
+  }
+  .kpi-delta {
+    @apply text-xs font-medium flex items-center gap-1;
+  }
+  .kpi-delta-up { @apply text-fce-green; }
+  .kpi-delta-down { @apply text-destructive; }
+  .kpi-delta-neutral { @apply text-muted-foreground; }
+
+  /* ─── BUTTONS ────────────────────────── */
   .btn-primary {
-    @apply gradient-pink text-white font-semibold hover:opacity-90 disabled:opacity-40
-           disabled:cursor-not-allowed rounded-md transition-opacity;
+    @apply gradient-pink text-white font-semibold hover:brightness-110 active:brightness-95
+           disabled:opacity-40 disabled:cursor-not-allowed rounded-md transition-all
+           shadow-[0_2px_8px_-2px_rgba(229,7,137,0.4)];
   }
   .btn-secondary {
-    @apply bg-secondary border border-border text-foreground hover:bg-muted
+    @apply bg-secondary border border-border text-foreground hover:bg-muted hover:border-border-strong
            disabled:opacity-40 rounded-md transition-colors;
   }
   .btn-ghost {
-    @apply text-muted-foreground hover:text-foreground hover:bg-muted
+    @apply text-muted-foreground hover:text-foreground hover:bg-muted/60
            disabled:opacity-40 rounded-md transition-colors;
   }
   .btn-danger {
     @apply bg-destructive/10 border border-destructive/30 text-destructive
            hover:bg-destructive/20 disabled:opacity-40 rounded-md transition-colors;
   }
+  .btn-sm {
+    @apply px-2.5 py-1 text-xs;
+  }
+  .btn-md {
+    @apply px-3.5 py-1.5 text-sm;
+  }
+  .btn-lg {
+    @apply px-5 py-2.5 text-sm;
+  }
 
-  /* Input padrao */
+  /* ─── INPUTS ─────────────────────────── */
   .input-base {
     @apply w-full px-3 py-2 rounded-md bg-card border border-border text-foreground
            placeholder:text-muted-foreground text-sm focus:outline-none
-           focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-colors;
+           focus:border-primary/60 focus:ring-2 focus:ring-primary/15 transition-colors;
+  }
+  .input-lg {
+    @apply px-4 py-2.5 text-[15px];
   }
 
-  /* Badge padrao */
+  /* ─── BADGES ─────────────────────────── */
   .badge-base {
     @apply inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wider;
   }
@@ -131,16 +197,84 @@
   .badge-brand {
     @apply badge-base bg-primary/15 text-primary border border-primary/30;
   }
+  .badge-info {
+    @apply badge-base bg-blue-500/15 text-blue-400 border border-blue-500/30;
+  }
+  .badge-dot {
+    @apply inline-block w-1.5 h-1.5 rounded-full;
+  }
+
+  /* ─── AVATAR ─────────────────────────── */
+  .avatar-base {
+    @apply rounded-full flex items-center justify-center font-medium select-none;
+  }
+  .avatar-sm { @apply avatar-base w-7 h-7 text-xs; }
+  .avatar-md { @apply avatar-base w-9 h-9 text-sm; }
+  .avatar-lg { @apply avatar-base w-12 h-12 text-base; }
+  .avatar-xl { @apply avatar-base w-16 h-16 text-lg; }
+
+  /* ─── SECTION / EMPTY STATE ──────────── */
+  .section-title {
+    @apply text-xs uppercase tracking-wider text-muted-foreground font-semibold;
+  }
+  .empty-state {
+    @apply card-elev py-16 px-6 text-center space-y-3 flex flex-col items-center;
+  }
+  .empty-state-icon {
+    @apply w-12 h-12 rounded-full bg-muted/60 flex items-center justify-center text-muted-foreground;
+  }
+  .empty-state-title {
+    @apply text-base font-semibold text-foreground;
+  }
+  .empty-state-text {
+    @apply text-sm text-muted-foreground max-w-md;
+  }
+
+  /* ─── SKELETON ───────────────────────── */
+  .skeleton {
+    @apply bg-muted/60 rounded animate-pulse;
+  }
+
+  /* ─── DIVIDERS ───────────────────────── */
+  .divider-h {
+    @apply h-px bg-border w-full;
+  }
+  .divider-v {
+    @apply w-px bg-border h-full;
+  }
+
+  /* ─── CHAT BUBBLES ───────────────────── */
+  .bubble-user {
+    @apply max-w-[80%] px-3.5 py-2 rounded-2xl rounded-br-md text-sm
+           bg-primary text-white shadow-sm;
+  }
+  .bubble-nina {
+    @apply max-w-[80%] px-3.5 py-2 rounded-2xl rounded-bl-md text-sm
+           bg-card border border-border text-foreground shadow-sm;
+  }
+  .bubble-human {
+    @apply max-w-[80%] px-3.5 py-2 rounded-2xl rounded-bl-md text-sm
+           bg-fce-green/15 border border-fce-green/30 text-foreground shadow-sm;
+  }
 }
 
 @layer utilities {
   .gradient-pink {
     background: linear-gradient(135deg, #e50789 0%, #c2076e 100%);
   }
-  .gradient-pink-hover {
-    background: linear-gradient(135deg, #f008a0 0%, #d8087a 100%);
+  .gradient-pink-soft {
+    background: linear-gradient(135deg, hsl(325 94% 46% / 0.18) 0%, hsl(325 94% 30% / 0.06) 100%);
   }
-  /* Backwards-compat - some pages still reference .glass */
+  .gradient-glass {
+    background: linear-gradient(135deg, hsl(240 5% 11% / 0.9) 0%, hsl(240 5% 7% / 0.95) 100%);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+  /* Backwards-compat */
   .glass {
     @apply bg-card border border-border/60;
   }

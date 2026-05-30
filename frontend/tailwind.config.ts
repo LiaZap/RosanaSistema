@@ -7,6 +7,15 @@ const config: Config = {
     extend: {
       colors: {
         border: 'hsl(var(--border))',
+        'border-strong': 'hsl(var(--border-strong))',
+        'card-elevated': 'hsl(var(--card-elevated))',
+        'muted-strong': 'hsl(var(--muted-strong))',
+        'stage-new': 'hsl(var(--stage-new))',
+        'stage-qualified': 'hsl(var(--stage-qualified))',
+        'stage-opportunity': 'hsl(var(--stage-opportunity))',
+        'stage-closing': 'hsl(var(--stage-closing))',
+        'stage-won': 'hsl(var(--stage-won))',
+        'stage-lost': 'hsl(var(--stage-lost))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
@@ -50,6 +59,10 @@ const config: Config = {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        xl: 'var(--radius-xl)',
+      },
+      boxShadow: {
+        glow: 'var(--shadow-glow)',
       },
       keyframes: {
         'fade-in': {
