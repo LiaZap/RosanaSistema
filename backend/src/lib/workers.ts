@@ -360,25 +360,44 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
   });
 
   // 11. Enfileira outbound. Prioridade:
-  //  - Tem foto Cloudinary: manda foto+caption
-  //  - Tem documento/video/audio: manda media+caption
-  //  - Senao: texto puro
-  const firstImage = result.attachments.find((a) => a.type === 'image');
-  const firstDoc = result.attachments.find((a) => a.type === 'document' || a.type === 'video' || a.type === 'audio');
+  //  - Imagens: cada uma vira mensagem propria, caption so na PRIMEIRA
+  //  - Documento/video/audio: media+caption
+  //  - Texto puro
+  // Helper pra tornar URL absoluta (Evolution precisa de URL publica)
+  const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
+  const toAbsolute = (url: string): string =>
+    url.startsWith('http')
+      ? (url.includes('res.cloudinary.com') ? transformedUrl(url) : url)
+      : `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
 
-  if (firstImage && firstImage.url.includes('res.cloudinary.com')) {
+  const imageAttachments = result.attachments.filter((a) => a.type === 'image');
+  const firstDoc = result.attachments.find(
+    (a) => a.type === 'document' || a.type === 'video' || a.type === 'audio',
+  );
+
+  if (imageAttachments.length > 0) {
+    // PRIMEIRA imagem leva o texto como caption
     await outboundQueue.add('send', {
       accountId,
       phoneNumber,
-      imageUrl: transformedUrl(firstImage.url),
+      imageUrl: toAbsolute(imageAttachments[0].url),
       caption: result.reply,
       conversationId,
     } satisfies OutboundJobData);
+    // Imagens adicionais sem caption (max 5)
+    for (let i = 1; i < Math.min(imageAttachments.length, 5); i++) {
+      await outboundQueue.add('send', {
+        accountId,
+        phoneNumber,
+        imageUrl: toAbsolute(imageAttachments[i].url),
+        conversationId,
+      } satisfies OutboundJobData);
+    }
   } else if (firstDoc) {
     await outboundQueue.add('send', {
       accountId,
       phoneNumber,
-      mediaUrl: firstDoc.url,
+      mediaUrl: toAbsolute(firstDoc.url),
       mediaType: firstDoc.type,
       fileName: firstDoc.fileName,
       caption: result.reply,
