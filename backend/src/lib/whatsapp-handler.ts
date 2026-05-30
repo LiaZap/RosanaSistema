@@ -3,6 +3,7 @@ import { db } from '../db/client.js';
 import { contacts, conversations } from '../db/schema.js';
 import { saveMessage } from './dani-conversations.js';
 import { upsertSessionStatus } from './evolution-client.js';
+import { resetFollowupOnUserReply } from './followup-agent.js';
 import { inboundQueue } from './queues.js';
 import { logger } from './logger.js';
 
@@ -141,6 +142,12 @@ export async function handleMessageUpsert(
       .returning({ id: conversations.id, status: conversations.status });
     conv = created;
   }
+
+  // Cliente respondeu - se follow-up tinha sido enviado, reseta state.
+  // Passa msg pra decidir se zera attempts (so substantiva, >20 chars).
+  await resetFollowupOnUserReply(conv.id, text).catch((err) =>
+    logger.warn({ err: (err as Error).message }, '[WhatsApp] resetFollowup failed'),
+  );
 
   // Se humano assumiu, salva mas nao processa
   if (conv.status !== 'nina') {

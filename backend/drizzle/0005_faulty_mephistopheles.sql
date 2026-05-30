@@ -1,0 +1,1 @@
+ALTER TABLE "conversations" ADD COLUMN "followup_total_attempts" integer DEFAULT 0 NOT NULL;

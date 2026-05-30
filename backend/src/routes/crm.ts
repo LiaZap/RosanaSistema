@@ -147,6 +147,21 @@ crm.get('/conversations/:id', requireAuth, async (c) => {
     .orderBy(desc(messages.createdAt))
     .limit(100);
 
+  // Pega info extra de follow-up
+  const [convFull] = await db
+    .select({
+      followupState: conversations.followupState,
+      followupAttempts: conversations.followupAttempts,
+      followupLastAttemptAt: conversations.followupLastAttemptAt,
+      assignedToAt: conversations.assignedToAt,
+      leadScore: conversations.leadScore,
+      intentLabel: conversations.intentLabel,
+      sentiment: conversations.sentiment,
+    })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+
   return c.json({
     conversation: {
       id: conv.id,
@@ -159,6 +174,17 @@ crm.get('/conversations/:id', requireAuth, async (c) => {
             tags: contact.tags,
           }
         : null,
+      followup: convFull
+        ? {
+            state: convFull.followupState,
+            attempts: convFull.followupAttempts,
+            lastAttemptAt: convFull.followupLastAttemptAt,
+          }
+        : null,
+      assignedToAt: convFull?.assignedToAt ?? null,
+      leadScore: convFull?.leadScore ?? 0,
+      intentLabel: convFull?.intentLabel ?? null,
+      sentiment: convFull?.sentiment ?? null,
     },
     messages: rows.reverse(),
   });
@@ -186,6 +212,9 @@ crm.patch('/conversations/:id', requireAuth, async (c) => {
     .set({
       status: parsed.data.status,
       assignedTo: parsed.data.status === 'human' ? user.id : null,
+      assignedToAt: parsed.data.status === 'human' ? new Date() : null,
+      // Reset follow-up state quando volta pra nina
+      followupState: parsed.data.status === 'nina' ? 'idle' : undefined,
       updatedAt: new Date(),
     })
     .where(eq(conversations.id, conversationId));

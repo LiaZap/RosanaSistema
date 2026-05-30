@@ -10,6 +10,7 @@ import {
 import { db } from '../db/client.js';
 import { accountMembers } from '../db/schema.js';
 import { runJobManually } from '../lib/cron-scheduler.js';
+import { runFollowupTick } from '../lib/followup-agent.js';
 import { logger } from '../lib/logger.js';
 
 const cronRoutes = new Hono();
@@ -55,8 +56,29 @@ cronRoutes.get('/schedule', requireAuth, async (c) => {
         humanReadable: 'A cada 1 hora',
         enabled: process.env.DISABLE_CRON !== 'true',
       },
+      {
+        id: 'followup-tick',
+        name: 'Follow-up agent',
+        description: 'Analisa conversas idle 4h+ e decide recovery via Gemini',
+        cron: '*/5 * * * *',
+        humanReadable: 'A cada 5 minutos (9h-18h)',
+        enabled: process.env.DISABLE_CRON !== 'true',
+      },
     ],
   });
+});
+
+// ── POST /cron/followup/run ─────────────────────────
+// Trigger manual do follow-up agent
+cronRoutes.post('/followup/run', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const accountId = z.string().uuid().parse(body.accountId);
+  await assertOwnerOrAdmin(user.id, accountId);
+
+  logger.info({ accountId, triggeredBy: user.id }, '[Cron] Follow-up manual trigger');
+  const result = await runFollowupTick({ accountId });
+  return c.json({ ok: true, result });
 });
 
 // ── POST /cron/run ──────────────────────────────────

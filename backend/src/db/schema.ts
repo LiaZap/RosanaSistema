@@ -109,13 +109,24 @@ export const conversations = pgTable('conversations', {
   contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'cascade' }),
   status: conversationStatusEnum('status').default('nina').notNull(),
   assignedTo: uuid('assigned_to').references(() => users.id),
+  assignedToAt: timestamp('assigned_to_at', { withTimezone: true }),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+  // Sprint 5+6: follow-up agent
+  followupState: varchar('followup_state', { length: 20 }).default('idle').notNull(),
+  followupAttempts: integer('followup_attempts').default(0).notNull(),
+  followupTotalAttempts: integer('followup_total_attempts').default(0).notNull(),
+  followupLastAttemptAt: timestamp('followup_last_attempt_at', { withTimezone: true }),
+  // Sprint 7: intent + sentiment (placeholder, usado em Sprint 7)
+  sentiment: varchar('sentiment', { length: 20 }),
+  leadScore: integer('lead_score').default(0).notNull(),
+  intentLabel: varchar('intent_label', { length: 50 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   accountIdx: index('conversations_account_idx').on(t.accountId),
   contactIdx: index('conversations_contact_idx').on(t.contactId),
   statusIdx: index('conversations_status_idx').on(t.status),
+  followupIdx: index('conversations_followup_idx').on(t.followupState, t.lastMessageAt),
 }));
 
 export const messages = pgTable('messages', {

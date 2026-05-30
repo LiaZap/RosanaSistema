@@ -4,6 +4,7 @@ import { db } from '../db/client.js';
 import { blingCredentials, cloudinaryCredentials } from '../db/schema.js';
 import { syncBlingCatalog } from './bling-sync.js';
 import { uploadPendingImages } from './cloudinary-client.js';
+import { runFollowupTick } from './followup-agent.js';
 import { logger } from './logger.js';
 
 /**
@@ -107,8 +108,28 @@ export function startCronJobs(): void {
     { timezone: TZ },
   );
 
+  // ── Follow-up tick: a cada 5 min ─────────────────
+  cron.schedule(
+    '*/5 * * * *',
+    async () => {
+      try {
+        await runFollowupTick();
+      } catch (err) {
+        logger.error({ err: (err as Error).message }, '[Cron] Followup tick error');
+      }
+    },
+    { timezone: TZ },
+  );
+
   logger.info(
-    { jobs: ['bling-sync (0 */5 * * *)', 'cloudinary-upload (0 * * * *)'], tz: TZ },
+    {
+      jobs: [
+        'bling-sync (0 */5 * * *)',
+        'cloudinary-upload (0 * * * *)',
+        'followup-tick (*/5 * * * *)',
+      ],
+      tz: TZ,
+    },
     '[Cron] Scheduler started',
   );
 }
