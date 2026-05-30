@@ -38,6 +38,39 @@ interface MessagesResponse {
 
 const CONV_STORAGE_KEY = 'fce_dani_conversation_id';
 
+function ImageAttachment({ url, alt }: { url: string; alt: string }) {
+  const [failed, setFailed] = useState(false);
+  const src = url.includes('res.cloudinary.com')
+    ? url
+    : `/api/media/proxy?url=${encodeURIComponent(url)}`;
+
+  if (failed) {
+    return (
+      <div className="rounded-lg mb-2 -mx-1 max-w-[280px] bg-muted/60 border border-border p-3 text-xs">
+        <p className="text-muted-foreground mb-1">Nao consegui carregar a imagem aqui</p>
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary hover:underline break-all font-mono text-[10px]"
+        >
+          Abrir foto em nova aba ↗
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      className="rounded-lg mb-2 -mx-1 max-w-[280px] bg-muted"
+      loading="lazy"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function DaniTestPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -194,21 +227,7 @@ export default function DaniTestPage() {
                 {/* Attachments - proxy via backend pra burlar hot-link */}
                 {t.attachments?.map((att, ai) =>
                   att.type === 'image' ? (
-                    <img
-                      key={ai}
-                      src={
-                        att.url.includes('res.cloudinary.com')
-                          ? att.url
-                          : `/api/media/proxy?url=${encodeURIComponent(att.url)}`
-                      }
-                      alt={att.caption ?? 'produto'}
-                      className="rounded-lg mb-2 -mx-1 max-w-[280px] bg-muted"
-                      loading="lazy"
-                      onError={(e) => {
-                        // Se proxy falhar, esconde a img (caption ja vai no texto)
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
+                    <ImageAttachment key={ai} url={att.url} alt={att.caption ?? 'produto'} />
                   ) : null,
                 )}
                 {t.text}

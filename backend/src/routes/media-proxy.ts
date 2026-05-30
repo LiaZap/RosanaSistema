@@ -18,9 +18,14 @@ const media = new Hono();
 const ALLOWED_HOSTS = [
   'bling.com.br',
   'res.cloudinary.com',
-  'imagens.bling.com.br',
-  'produtos.ninja.bling.com.br',
+  'cloudinary.com',
   'storage.googleapis.com',
+  'googleusercontent.com',
+  'amazonaws.com', // S3 usado pelo Bling
+  'imgix.net',
+  'fbcdn.net',
+  'whatsapp.net',
+  'mmg.whatsapp.net',
 ];
 
 const MAX_BYTES = 10 * 1024 * 1024;

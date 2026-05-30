@@ -237,9 +237,18 @@ export async function processDaniMessage(
               type: 'image',
               url: produto.imagem,
             });
+            logger.info(
+              { consulta, imagem: produto.imagem.slice(0, 150), bling: produto.blingId },
+              '[DANI] image attachment from product',
+            );
+          } else {
+            logger.info(
+              { consulta, found: !!produto, hasBlingImg: !!produto?.imagem },
+              '[DANI] product found but no image',
+            );
           }
-        } catch {
-          // ignore - sem foto, manda texto
+        } catch (err) {
+          logger.warn({ err: (err as Error).message }, '[DANI] product detail failed');
         }
       }
     }
