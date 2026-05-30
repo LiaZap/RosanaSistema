@@ -13,9 +13,16 @@ interface ToolCallInfo {
   args: Record<string, unknown>;
 }
 
+interface DaniAttachment {
+  type: 'image';
+  url: string;
+  caption?: string;
+}
+
 interface ChatTurn {
   role: 'user' | 'model';
   text: string;
+  attachments?: DaniAttachment[];
   meta?: {
     modelMode: string;
     durationMs: number;
@@ -97,6 +104,7 @@ export default function DaniTestPage() {
       const res = await api.post<{
         reply: string;
         conversationId: string;
+        attachments?: DaniAttachment[];
         meta: {
           modelMode: string;
           durationMs: number;
@@ -116,7 +124,10 @@ export default function DaniTestPage() {
         setConversationId(res.conversationId);
       }
 
-      setTurns([...newTurns, { role: 'model', text: res.reply, meta: res.meta }]);
+      setTurns([
+        ...newTurns,
+        { role: 'model', text: res.reply, meta: res.meta, attachments: res.attachments },
+      ]);
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Erro desconhecido';
       setError(msg);
@@ -174,12 +185,24 @@ export default function DaniTestPage() {
               className={`flex ${t.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap ${
+                className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm whitespace-pre-wrap overflow-hidden ${
                   t.role === 'user'
                     ? 'gradient-pink text-white'
                     : 'bg-card border border-border text-foreground'
                 }`}
               >
+                {/* Attachments */}
+                {t.attachments?.map((att, ai) =>
+                  att.type === 'image' ? (
+                    <img
+                      key={ai}
+                      src={att.url}
+                      alt={att.caption ?? 'foto produto'}
+                      className="rounded-lg mb-2 -mx-1 max-w-[280px]"
+                      loading="lazy"
+                    />
+                  ) : null,
+                )}
                 {t.text}
                 {t.meta && (
                   <div className="mt-1.5 pt-1.5 border-t border-white/10 text-[10px] opacity-60 space-y-0.5">

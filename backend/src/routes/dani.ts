@@ -137,6 +137,7 @@ dani.post('/chat', requireAuth, async (c) => {
   return c.json({
     reply: result.reply,
     conversationId,
+    attachments: result.attachments,
     meta: {
       modelMode: result.modelUsed,
       durationMs: result.durationMs,
