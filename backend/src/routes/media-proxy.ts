@@ -162,11 +162,9 @@ media.get('/file/:productId', async (c) => {
     });
     if (!result) {
       logger.warn({ productId }, '[MediaProxy] upload returned null - redirecting to source');
-      // Fallback: tenta redirect pra URL Bling direta (browser pode conseguir)
-      // Pegar URL fresca antes do redirect
+      // Fallback: busca URL fresca do Bling e redirect 302
       try {
-        const { getValidAccessToken } = await import('../lib/bling-client.js');
-        const { fetchFreshProductImageUrl } = await import('../lib/bling-client.js');
+        const { getValidAccessToken, fetchFreshProductImageUrl } = await import('../lib/bling-client.js');
         if (product.blingId) {
           const token = await getValidAccessToken(product.accountId);
           if (token) {
@@ -182,7 +180,8 @@ media.get('/file/:productId', async (c) => {
       } catch (err) {
         logger.warn({ err: (err as Error).message }, '[MediaProxy] fresh URL fetch failed');
       }
-      return c.text('source image unavailable', 502);
+      // 404 em vez de 502: EasyPanel/Traefik intercepta 5xx com page HTML.
+      return c.text('source image unavailable', 404);
     }
 
     // Atualiza row
@@ -199,7 +198,7 @@ media.get('/file/:productId', async (c) => {
     const refetched = await streamProductImage(result.key);
     if (!refetched?.body) {
       logger.warn({ productId, key: result.key }, '[MediaProxy] upload OK but refetch failed');
-      return c.text('upload succeeded but read failed', 500);
+      return c.text('upload succeeded but read failed', 404);
     }
     const buffer = await streamToBuffer(refetched.body);
     c.header('Content-Type', result.mimetype);
@@ -209,7 +208,8 @@ media.get('/file/:productId', async (c) => {
     const msg = (err as Error).message;
     const stack = (err as Error).stack?.slice(0, 500);
     logger.error({ err: msg, stack, productId }, '[MediaProxy] /file handler crashed');
-    return c.text(`handler error: ${msg.slice(0, 200)}`, 500);
+    // 404 em vez de 500: EasyPanel intercepta 5xx com page HTML.
+    return c.text(`handler error: ${msg.slice(0, 200)}`, 404);
   }
 });
 
