@@ -252,9 +252,12 @@ export default function PipelinePage() {
         </div>
       )}
 
-      {/* Kanban */}
-      <div className="flex-1 p-4 overflow-x-auto overflow-y-hidden">
-        <div className="flex gap-3 min-w-min h-full pb-4">
+      {/* Kanban - grid responsivo SEM rolagem lateral */}
+      <div className="flex-1 p-2 overflow-hidden">
+        <div
+          className="grid gap-2 h-full"
+          style={{ gridTemplateColumns: `repeat(${Math.max(stages.length, 1)}, minmax(0, 1fr))` }}
+        >
           {stages.map((stage) => {
             const stageDeals = dealsByStage.get(stage.id) ?? [];
             const stageSummary = summaryByStage.get(stage.id);
@@ -266,40 +269,39 @@ export default function PipelinePage() {
                 onDragOver={(e) => handleDragOver(e, stage.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, stage.id)}
-                className={`flex-shrink-0 w-72 rounded-xl border transition-all flex flex-col ${
+                className={`min-w-0 rounded-lg border transition-all flex flex-col ${
                   isOver
                     ? 'border-primary bg-primary/5 shadow-glow'
-                    : 'border-border bg-card/40'
+                    : 'border-border bg-card/30'
                 }`}
               >
-                {/* Stage header */}
-                <div className="p-3 border-b border-border relative">
+                {/* Stage header compacto */}
+                <div className="p-2 border-b border-border relative">
                   <div
-                    className="absolute top-0 left-0 right-0 h-[3px] rounded-t-xl"
+                    className="absolute top-0 left-0 right-0 h-[2px] rounded-t-lg"
                     style={{ background: color }}
                   />
-                  <div className="flex items-start justify-between gap-2 pt-1">
+                  <div className="flex items-center justify-between gap-1.5 pt-0.5">
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground text-sm uppercase tracking-wide truncate flex items-center gap-2">
-                        <span
-                          className="badge-dot"
-                          style={{ background: color }}
-                        />
-                        {stage.name}
+                      <h3 className="font-semibold text-foreground text-[10px] uppercase tracking-wider truncate flex items-center gap-1.5">
+                        <span className="badge-dot shrink-0" style={{ background: color }} />
+                        <span className="truncate">{stage.name}</span>
                       </h3>
-                      <div className="flex items-baseline gap-1.5 mt-1">
-                        <span className="text-xl font-bold text-foreground tabular-nums">
+                      <div className="flex items-baseline gap-1 mt-0.5">
+                        <span className="text-sm font-bold text-foreground tabular-nums">
                           {stageSummary?.count ?? 0}
                         </span>
-                        <span className="text-xs text-fce-green font-medium">
-                          {fmtBRL(stageSummary?.totalValue ?? 0)}
-                        </span>
+                        {(stageSummary?.totalValue ?? 0) > 0 && (
+                          <span className="text-[10px] text-fce-green font-medium truncate">
+                            {fmtBRL(stageSummary?.totalValue ?? 0)}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <button
                       onClick={() => openNewDeal(stage.id)}
-                      className="w-7 h-7 rounded-md border border-border hover:bg-card hover:border-border-strong
-                                 text-muted-foreground hover:text-foreground text-base leading-none transition-colors shrink-0"
+                      className="w-5 h-5 rounded border border-border hover:bg-card hover:border-border-strong
+                                 text-muted-foreground hover:text-foreground text-sm leading-none transition-colors shrink-0"
                       title="Novo deal"
                     >
                       +
@@ -307,11 +309,11 @@ export default function PipelinePage() {
                   </div>
                 </div>
 
-                {/* Deals scrollable */}
-                <div className="flex-1 p-2 space-y-2 overflow-y-auto min-h-0">
+                {/* Deals scrollable só vertical */}
+                <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto min-h-0">
                   {stageDeals.length === 0 && (
-                    <div className="text-center text-xs text-muted-foreground py-12 px-3 border border-dashed border-border rounded-lg">
-                      Arraste deals aqui ou clique em <span className="text-foreground">+</span>
+                    <div className="text-center text-[10px] text-muted-foreground py-6 px-2 border border-dashed border-border/60 rounded-md">
+                      vazio
                     </div>
                   )}
                   {stageDeals.map((deal) => (
@@ -464,53 +466,50 @@ function DealCard({
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`group card-elev p-3 space-y-2 cursor-grab active:cursor-grabbing
+      className={`group card-elev p-2 cursor-grab active:cursor-grabbing
                   hover:border-border-strong hover:shadow-md transition-all relative overflow-hidden
                   ${dragging ? 'opacity-40 scale-95' : ''}`}
     >
-      {/* Filete lateral colorido */}
+      {/* Filete lateral colorido fino */}
       <div
-        className="absolute top-0 left-0 bottom-0 w-[3px] opacity-60"
+        className="absolute top-0 left-0 bottom-0 w-[2px] opacity-70"
         style={{ background: accentColor }}
       />
-      <div className="flex items-start justify-between gap-2 pl-1">
-        <h4 className="font-semibold text-foreground text-sm flex-1 leading-snug text-balance">
-          {deal.title}
-        </h4>
-        <button
-          onClick={onDelete}
-          className="text-muted-foreground/60 hover:text-destructive text-xs
-                     opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-          title="Apagar"
-        >
-          ✕
-        </button>
-      </div>
-      <div className="flex items-center gap-2 pl-1">
-        <Avatar
-          fallback={deal.contactName ?? deal.contactPhone.slice(-2)}
-          size="sm"
-        />
-        <div className="flex-1 min-w-0">
-          <div className="text-xs text-foreground truncate">
-            {deal.contactName ?? '—'}
-          </div>
-          <div className="text-[10px] text-muted-foreground font-mono">
-            +{deal.contactPhone}
-          </div>
+      <div className="pl-1.5 space-y-1">
+        <div className="flex items-start justify-between gap-1">
+          <h4 className="font-semibold text-foreground text-xs flex-1 leading-snug line-clamp-2">
+            {deal.title}
+          </h4>
+          <button
+            onClick={onDelete}
+            className="text-muted-foreground/60 hover:text-destructive text-[10px]
+                       opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            title="Apagar"
+          >
+            ✕
+          </button>
         </div>
-      </div>
-      <div className="flex items-center justify-between pl-1 pt-1 border-t border-border/60">
-        {deal.value ? (
-          <span className="text-sm font-bold text-fce-green tabular-nums">
-            {fmtBRL(deal.value)}
+        <div className="flex items-center gap-1.5">
+          <Avatar fallback={deal.contactName ?? deal.contactPhone.slice(-2)} size="sm" />
+          <span className="text-[10px] text-muted-foreground truncate flex-1">
+            {deal.contactName ?? `+${deal.contactPhone}`}
           </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">sem valor</span>
-        )}
-        <span className="text-[10px] text-muted-foreground" title={new Date(deal.updatedAt).toLocaleString('pt-BR')}>
-          {timeAgo(deal.updatedAt)}
-        </span>
+        </div>
+        <div className="flex items-center justify-between gap-1 pt-0.5">
+          {deal.value ? (
+            <span className="text-xs font-bold text-fce-green tabular-nums truncate">
+              {fmtBRL(deal.value)}
+            </span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground">—</span>
+          )}
+          <span
+            className="text-[9px] text-muted-foreground shrink-0"
+            title={new Date(deal.updatedAt).toLocaleString('pt-BR')}
+          >
+            {timeAgo(deal.updatedAt)}
+          </span>
+        </div>
       </div>
     </div>
   );
