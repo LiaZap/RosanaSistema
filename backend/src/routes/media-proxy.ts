@@ -244,6 +244,55 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── POST /media/refresh/:productId ───────────────────
+// Invalida cache MinIO + imagemBling do produto, forca re-fetch
+media.post('/refresh/:productId', async (c) => {
+  const productId = c.req.param('productId');
+  const out: Record<string, unknown> = { productId };
+  try {
+    const product = await db.query.produtosCatalogo.findFirst({
+      where: eq(produtosCatalogo.id, productId),
+    });
+    if (!product) {
+      out.error = 'product not found';
+      return c.json(out, 404);
+    }
+
+    // Tenta apagar do MinIO todas extensões possíveis
+    const { getS3 } = await import('../lib/minio-cache.js');
+    const { DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+    const bucket = process.env.MINIO_BUCKET || 'fce-media';
+    const deleted: string[] = [];
+    for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+      const key = buildProductImageKey(productId, ext);
+      try {
+        await getS3().send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
+        deleted.push(key);
+      } catch {
+        // 404 no MinIO, ignora
+      }
+    }
+    out.minioDeleted = deleted;
+
+    // Zera imagemBling + imagemMinio no banco
+    await db
+      .update(produtosCatalogo)
+      .set({
+        imagemBling: null,
+        imagemMinio: null,
+        minioUploadedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(produtosCatalogo.id, productId));
+    out.dbCleared = true;
+
+    return c.json(out);
+  } catch (err) {
+    out.error = (err as Error).message;
+    return c.json(out, 500);
+  }
+});
+
 // ── GET /media/dani-test ─────────────────────────────
 // Debug: simula uma msg pra DANI (sem auth, sem persistir)
 media.get('/dani-test', async (c) => {

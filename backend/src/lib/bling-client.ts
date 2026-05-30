@@ -271,43 +271,60 @@ export async function fetchFreshProductImageUrl(opts: {
       imagemURL?: string;
       midia?: {
         imagens?: {
-          externas?: Array<{ link?: string }>;
-          internas?: Array<{ link?: string; linkMiniatura?: string; validade?: string }>;
+          externas?: Array<{ link?: string; ordem?: number }>;
+          internas?: Array<{
+            link?: string;
+            linkMiniatura?: string;
+            validade?: string;
+            ordem?: number;
+          }>;
         };
       };
     };
   };
 
-  // 1. Externas (mais estavel - CDN do lojista)
-  const externa = json.data?.midia?.imagens?.externas?.find((e) => e.link)?.link;
-  if (externa) {
-    logger.debug({ blingId: opts.blingId, source: 'externa' }, '[Bling] image URL resolved');
-    return externa;
+  const now = Date.now();
+  const validadeOk = (validade?: string) => {
+    if (!validade) return true;
+    const expira = Date.parse(validade);
+    return Number.isFinite(expira) ? expira > now : true;
+  };
+  // Sort por ordem ASC pra pegar a IMAGEM PRINCIPAL (ordem=1) do Bling.
+  // Ordem ausente vai pro final.
+  const byOrdem = (a: { ordem?: number }, b: { ordem?: number }) =>
+    (a.ordem ?? 999) - (b.ordem ?? 999);
+
+  // 1. Externas - imagem principal por ordem
+  const externas = (json.data?.midia?.imagens?.externas ?? [])
+    .filter((e) => e.link)
+    .sort(byOrdem);
+  if (externas[0]?.link) {
+    logger.debug(
+      { blingId: opts.blingId, source: 'externa', ordem: externas[0].ordem },
+      '[Bling] image URL resolved',
+    );
+    return externas[0].link;
   }
 
-  // 2. Internas: pre-signed S3.
-  // Schema real Bling: { link (FULL), linkMiniatura (thumb com /t/), validade }
-  // Preferimos `link` (imagem original) sobre `linkMiniatura`.
-  const now = Date.now();
-  const interna = json.data?.midia?.imagens?.internas?.find((i) => {
-    if (!i.link && !i.linkMiniatura) return false;
-    if (!i.validade) return true;
-    const expira = Date.parse(i.validade);
-    return Number.isFinite(expira) ? expira > now : true;
-  });
-  if (interna?.link) {
+  // 2. Internas - pega a imagem PRINCIPAL (ordem 1) do Bling.
+  // Schema real: { link (FULL), linkMiniatura (thumb /t/), validade, ordem }
+  const internas = (json.data?.midia?.imagens?.internas ?? [])
+    .filter((i) => (i.link || i.linkMiniatura) && validadeOk(i.validade))
+    .sort(byOrdem);
+  const principal = internas[0];
+  if (principal?.link) {
     logger.debug(
-      { blingId: opts.blingId, source: 'interna.link', validade: interna.validade },
-      '[Bling] image URL resolved (full)',
+      { blingId: opts.blingId, source: 'interna.link', ordem: principal.ordem },
+      '[Bling] image URL resolved (full, principal)',
     );
-    return interna.link;
+    return principal.link;
   }
-  if (interna?.linkMiniatura) {
+  if (principal?.linkMiniatura) {
     logger.debug(
-      { blingId: opts.blingId, source: 'interna.linkMiniatura', validade: interna.validade },
+      { blingId: opts.blingId, source: 'interna.linkMiniatura', ordem: principal.ordem },
       '[Bling] image URL resolved (thumb fallback)',
     );
-    return interna.linkMiniatura;
+    return principal.linkMiniatura;
   }
 
   // 3. Campo legacy V2
