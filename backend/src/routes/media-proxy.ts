@@ -244,6 +244,34 @@ media.get('/file/:productId', async (c) => {
   }
 });
 
+// ── GET /media/dani-test ─────────────────────────────
+// Debug: simula uma msg pra DANI (sem auth, sem persistir)
+media.get('/dani-test', async (c) => {
+  const message = c.req.query('msg') ?? 'tem foto do windi?';
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+
+  const { processDaniMessage } = await import('../lib/dani-orchestrator.js');
+  try {
+    const result = await processDaniMessage(message, {
+      accountId,
+      contactId: null,
+      history: [],
+    });
+    return c.json({
+      input: message,
+      reply: result.reply,
+      shouldReply: result.shouldReply,
+      attachments: result.attachments,
+      toolCalls: result.toolCalls.map((tc) => ({ name: tc.name, args: tc.args })),
+      durationMs: result.durationMs,
+      iterations: result.iterations,
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message, stack: (err as Error).stack?.slice(0, 500) }, 500);
+  }
+});
+
 // ── GET /media/search-test ───────────────────────────
 // Debug: testa a busca de produtos (rota da DANI)
 media.get('/search-test', async (c) => {
