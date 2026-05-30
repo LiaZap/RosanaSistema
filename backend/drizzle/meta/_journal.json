@@ -50,6 +50,13 @@
       "when": 1780106538785,
       "tag": "0006_nebulous_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1780108032352,
+      "tag": "0007_dear_karen_page",
+      "breakpoints": true
     }
   ]
 }

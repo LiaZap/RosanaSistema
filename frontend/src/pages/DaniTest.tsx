@@ -40,7 +40,12 @@ const CONV_STORAGE_KEY = 'fce_dani_conversation_id';
 
 function ImageAttachment({ url, alt }: { url: string; alt: string }) {
   const [failed, setFailed] = useState(false);
-  const src = url.includes('res.cloudinary.com')
+  // URLs relativas (/media/file/:id ou /media/proxy) vao via /api (nginx)
+  // URLs absolutas Cloudinary vao direto
+  // URLs absolutas Bling/outros vao via proxy
+  const src = url.startsWith('/media/')
+    ? `/api${url}`
+    : url.includes('res.cloudinary.com')
     ? url
     : `/api/media/proxy?url=${encodeURIComponent(url)}`;
 

@@ -39,6 +39,20 @@ export interface ProductSearchResult {
 }
 
 function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult {
+  // Prioridade da imagem: Cloudinary (CDN externo) > MinIO local > Bling fallback
+  // MinIO retorna URL relativa /media/file/:id - frontend monta absoluta.
+  // Sempre que o produto tem imagemBling, o endpoint /media/file/:id funciona
+  // (faz lazy upload se MinIO ainda nao tem cache).
+  let imagem: string | null = null;
+  if (row.imagemCloudinary) {
+    imagem = row.imagemCloudinary;
+  } else if (row.imagemMinio) {
+    imagem = row.imagemMinio;
+  } else if (row.imagemBling) {
+    // Tem imagem na fonte - retorna URL do nosso endpoint que faz lazy upload
+    imagem = `/media/file/${row.id}`;
+  }
+
   return {
     id: row.id,
     blingId: row.blingId,
@@ -50,7 +64,7 @@ function mapRow(row: typeof produtosCatalogo.$inferSelect): ProductSearchResult 
     disponivel: row.disponivel,
     marca: row.marca,
     categoria: row.categoria,
-    imagem: row.imagemCloudinary ?? row.imagemBling,
+    imagem,
     descricaoCurta: row.descricaoCurta,
     stockSource: 'cache',
   };

@@ -1,9 +1,10 @@
 import cron from 'node-cron';
 import { eq, isNotNull } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { blingCredentials, cloudinaryCredentials } from '../db/schema.js';
+import { accounts, blingCredentials, cloudinaryCredentials } from '../db/schema.js';
 import { syncBlingCatalog } from './bling-sync.js';
 import { uploadPendingImages } from './cloudinary-client.js';
+import { cachePendingProductImages } from './minio-cache.js';
 import { runFollowupTick } from './followup-agent.js';
 import { logger } from './logger.js';
 
@@ -108,6 +109,39 @@ export function startCronJobs(): void {
     { timezone: TZ },
   );
 
+  // ── MinIO product image cache: a cada 30min ─────
+  cron.schedule(
+    '*/30 * * * *',
+    async () => {
+      logger.info('[Cron] MinIO image cache tick');
+      try {
+        const allAccounts = await db.select({ id: accounts.id }).from(accounts);
+        for (const acc of allAccounts) {
+          try {
+            const result = await cachePendingProductImages({
+              accountId: acc.id,
+              maxItems: 100,
+            });
+            if (result.uploaded > 0) {
+              logger.info(
+                { accountId: acc.id, uploaded: result.uploaded, failed: result.failed },
+                '[Cron] MinIO cache done for account',
+              );
+            }
+          } catch (err) {
+            logger.error(
+              { accountId: acc.id, err: (err as Error).message },
+              '[Cron] MinIO cache FAILED for account',
+            );
+          }
+        }
+      } catch (err) {
+        logger.error({ err: (err as Error).message }, '[Cron] MinIO cache job error');
+      }
+    },
+    { timezone: TZ },
+  );
+
   // ── Follow-up tick: a cada 5 min ─────────────────
   cron.schedule(
     '*/5 * * * *',
@@ -126,6 +160,7 @@ export function startCronJobs(): void {
       jobs: [
         'bling-sync (0 */5 * * *)',
         'cloudinary-upload (0 * * * *)',
+        'minio-image-cache (*/30 * * * *)',
         'followup-tick (*/5 * * * *)',
       ],
       tz: TZ,

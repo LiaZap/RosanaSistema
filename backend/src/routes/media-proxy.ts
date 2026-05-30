@@ -1,4 +1,12 @@
 import { Hono } from 'hono';
+import { eq } from 'drizzle-orm';
+import { db } from '../db/client.js';
+import { produtosCatalogo } from '../db/schema.js';
+import {
+  buildProductImageKey,
+  streamProductImage,
+  uploadImageFromUrl,
+} from '../lib/minio-cache.js';
 import { logger } from '../lib/logger.js';
 
 const media = new Hono();
@@ -104,5 +112,71 @@ media.get('/proxy', async (c) => {
     return c.text('proxy failed', 502);
   }
 });
+
+// ── GET /media/file/:productId ──────────────────────
+// Serve imagem do MinIO. Se nao tem ainda, faz upload lazy.
+media.get('/file/:productId', async (c) => {
+  const productId = c.req.param('productId');
+
+  // Tenta servir do MinIO direto
+  for (const ext of ['jpg', 'jpeg', 'png', 'webp']) {
+    const key = buildProductImageKey(productId, ext);
+    const obj = await streamProductImage(key);
+    if (obj?.body) {
+      const buffer = await streamToBuffer(obj.body);
+      c.header('Content-Type', obj.contentType ?? 'image/jpeg');
+      c.header('Cache-Control', 'public, max-age=31536000, immutable');
+      return c.body(buffer as unknown as ArrayBuffer);
+    }
+  }
+
+  // Nao tem no MinIO ainda - tenta lazy upload do Bling
+  const product = await db.query.produtosCatalogo.findFirst({
+    where: eq(produtosCatalogo.id, productId),
+  });
+
+  if (!product?.imagemBling) {
+    return c.text('image not found', 404);
+  }
+
+  logger.info({ productId }, '[MediaProxy] lazy uploading to MinIO');
+  const result = await uploadImageFromUrl({
+    productId,
+    imageUrl: product.imagemBling,
+  });
+  if (!result) {
+    return c.text('source image unavailable', 502);
+  }
+
+  // Atualiza row
+  await db
+    .update(produtosCatalogo)
+    .set({
+      imagemMinio: `/media/file/${productId}`,
+      minioUploadedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(produtosCatalogo.id, productId));
+
+  // Refetch e stream
+  const refetched = await streamProductImage(result.key);
+  if (!refetched?.body) {
+    return c.text('upload succeeded but read failed', 500);
+  }
+  const buffer = await streamToBuffer(refetched.body);
+  c.header('Content-Type', result.mimetype);
+  c.header('Cache-Control', 'public, max-age=31536000, immutable');
+  return c.body(buffer as unknown as ArrayBuffer);
+});
+
+// Helper pra stream -> buffer
+async function streamToBuffer(stream: NodeJS.ReadableStream | null): Promise<Buffer> {
+  if (!stream) return Buffer.alloc(0);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
 
 export default media;
