@@ -62,7 +62,10 @@ const I = {
 const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Visao geral',
-    items: [{ to: '/dashboard', label: 'Dashboard', icon: I.dashboard }],
+    items: [
+      { to: '/dashboard', label: 'Dashboard', icon: I.dashboard },
+      { to: '/onboarding', label: 'Onboarding', icon: I.testTube },
+    ],
   },
   {
     label: 'Operacoes',
