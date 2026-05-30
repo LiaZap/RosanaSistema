@@ -5,6 +5,7 @@ import {
 import { db } from '../db/client.js';
 import { appointments } from '../db/schema.js';
 import { buscarProdutos, buscarProdutoDetalhe } from './dani-products.js';
+import { buscarMidia, trackUse } from './media-library.js';
 import { logger } from './logger.js';
 
 /**
@@ -48,6 +49,28 @@ export const DANI_TOOLS: FunctionDeclaration[] = [
         },
       },
       required: ['titulo', 'data_iso', 'hora', 'tipo'],
+    },
+  },
+  {
+    name: 'enviar_arquivo',
+    description:
+      'Envia um arquivo da biblioteca (catalogo PDF, video de produto, audio explicativo) ' +
+      'pelo WhatsApp. Use quando o cliente pedir "catalogo", "tabela", "video", "PDF", etc. ' +
+      'Busca no acervo da loja, NAO no catalogo Bling.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        busca: {
+          type: SchemaType.STRING,
+          description:
+            'Termo de busca curto. Ex: "catalogo enxoval", "tabela aluguel", "video carrinho ping two".',
+        },
+        motivo: {
+          type: SchemaType.STRING,
+          description: 'Por que esta enviando esse arquivo (interno, ajuda o sistema).',
+        },
+      },
+      required: ['busca'],
     },
   },
   {
@@ -135,10 +158,46 @@ export interface CriarAgendamentoToolResult {
 /**
  * Executor das tools. Mapeado por nome — orchestrator chama o handler certo.
  */
+export interface EnviarArquivoToolResult {
+  status: 'ENVIADO' | 'NAO_ENCONTRADO';
+  arquivos?: Array<{
+    nome: string;
+    descricao: string | null;
+    tipo: string;
+    url: string;
+  }>;
+}
+
 export const TOOL_HANDLERS: Record<
   string,
   (args: Record<string, unknown>, ctx: ToolContext) => Promise<unknown>
 > = {
+  async enviar_arquivo(args, ctx) {
+    const busca = String(args.busca ?? '').trim();
+    if (!busca) {
+      return { status: 'NAO_ENCONTRADO' } satisfies EnviarArquivoToolResult;
+    }
+    const results = await buscarMidia({ accountId: ctx.accountId, consulta: busca, limit: 3 });
+    if (results.length === 0) {
+      logger.info({ busca }, '[DANI Tool] enviar_arquivo - sem matches');
+      return { status: 'NAO_ENCONTRADO' } satisfies EnviarArquivoToolResult;
+    }
+    // Track use do primeiro (mais relevante)
+    void trackUse(results[0].id);
+    logger.info(
+      { busca, found: results.length, top: results[0].name },
+      '[DANI Tool] enviar_arquivo',
+    );
+    return {
+      status: 'ENVIADO',
+      arquivos: results.map((r) => ({
+        nome: r.name,
+        descricao: r.description,
+        tipo: r.fileType,
+        url: r.fileUrl,
+      })),
+    } satisfies EnviarArquivoToolResult;
+  },
   async criar_agendamento(args, ctx) {
     if (!ctx.contactId) {
       logger.warn({ accountId: ctx.accountId }, '[DANI Tool] criar_agendamento sem contactId');

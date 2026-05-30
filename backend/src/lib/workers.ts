@@ -347,13 +347,28 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
     processedByNina: true,
   });
 
-  // 11. Enfileira outbound (text ou media)
+  // 11. Enfileira outbound. Prioridade:
+  //  - Tem foto Cloudinary: manda foto+caption
+  //  - Tem documento/video/audio: manda media+caption
+  //  - Senao: texto puro
   const firstImage = result.attachments.find((a) => a.type === 'image');
+  const firstDoc = result.attachments.find((a) => a.type === 'document' || a.type === 'video' || a.type === 'audio');
+
   if (firstImage && firstImage.url.includes('res.cloudinary.com')) {
     await outboundQueue.add('send', {
       accountId,
       phoneNumber,
       imageUrl: transformedUrl(firstImage.url),
+      caption: result.reply,
+      conversationId,
+    } satisfies OutboundJobData);
+  } else if (firstDoc) {
+    await outboundQueue.add('send', {
+      accountId,
+      phoneNumber,
+      mediaUrl: firstDoc.url,
+      mediaType: firstDoc.type,
+      fileName: firstDoc.fileName,
       caption: result.reply,
       conversationId,
     } satisfies OutboundJobData);
@@ -386,7 +401,7 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
  * OUTBOUND - envia via Evolution API.
  */
 async function processOutbound(data: OutboundJobData): Promise<void> {
-  const { accountId, phoneNumber, text, imageUrl, caption } = data;
+  const { accountId, phoneNumber, text, imageUrl, mediaUrl, mediaType, caption } = data;
 
   const settings = await getEvolutionSettings(accountId);
   const session = await db.query.whatsappSessions.findFirst({
@@ -404,6 +419,16 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
       mediaUrl: imageUrl,
       caption: caption ?? '',
       mediaType: 'image',
+    });
+  } else if (mediaUrl && mediaType && mediaType !== 'audio') {
+    // PDF / video / image generica
+    await sendMediaMessage({
+      settings,
+      instanceName: session.instanceName,
+      phoneNumber,
+      mediaUrl,
+      caption: caption ?? '',
+      mediaType: mediaType as 'image' | 'video' | 'document',
     });
   } else if (text) {
     await sendTextMessage({

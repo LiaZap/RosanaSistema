@@ -77,6 +77,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: '/agent', label: 'Configuracao', icon: I.agent },
       { to: '/knowledge', label: 'Base de conhecimento', icon: I.dashboard },
+      { to: '/library', label: 'Biblioteca', icon: I.cloud },
       { to: '/dani', label: 'Teste de chat', icon: I.testTube },
     ],
   },

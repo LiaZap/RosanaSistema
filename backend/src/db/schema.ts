@@ -336,14 +336,19 @@ export const mediaLibrary = pgTable('media_library', {
   id: uuid('id').primaryKey().defaultRandom(),
   accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
   name: varchar('name', { length: 255 }).notNull(),
+  nameNormalized: varchar('name_normalized', { length: 255 }),
   description: text('description'),
   fileUrl: text('file_url').notNull(),
   fileType: varchar('file_type', { length: 50 }).notNull(),
   fileSize: integer('file_size'),
+  tags: jsonb('tags').$type<string[]>().default([]),
+  useCount: integer('use_count').default(0).notNull(),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
   uploadedBy: uuid('uploaded_by').references(() => users.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   accountIdx: index('media_library_account_idx').on(t.accountId),
+  nameNormIdx: index('media_library_name_norm_idx').on(t.accountId, t.nameNormalized),
 }));
 
 // ── Teams ────────────────────────────────────────────

@@ -68,6 +68,9 @@ export interface OutboundJobData {
   phoneNumber: string;
   text?: string;
   imageUrl?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'document' | 'audio';
+  fileName?: string;
   caption?: string;
   conversationId?: string;
 }

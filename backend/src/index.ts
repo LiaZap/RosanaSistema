@@ -19,6 +19,7 @@ import appointmentRoutes from './routes/appointments.js';
 import cronRoutes from './routes/cron.js';
 import knowledgeRoutes from './routes/knowledge.js';
 import mediaProxyRoutes from './routes/media-proxy.js';
+import mediaRoutes from './routes/media.js';
 
 const app = new Hono();
 
@@ -46,6 +47,7 @@ app.route('/pipeline', pipelineRoutes);
 app.route('/appointments', appointmentRoutes);
 app.route('/cron', cronRoutes);
 app.route('/knowledge', knowledgeRoutes);
+app.route('/library', mediaRoutes);
 app.route('/media', mediaProxyRoutes);
 app.route('', healthRoutes);
 

@@ -14,9 +14,10 @@ import { loadContextualKB } from './knowledge-base.js';
 import { logger } from './logger.js';
 
 export interface DaniAttachment {
-  type: 'image';
+  type: 'image' | 'document' | 'video' | 'audio';
   url: string;
   caption?: string;
+  fileName?: string;
 }
 
 /**
@@ -206,7 +207,7 @@ export async function processDaniMessage(
     ? (clean.length >= 5 ? clean : 'Pode me contar mais sobre o que voce esta procurando?')
     : '';
 
-  // Extrai attachments das tool calls de detalhe (DANI quer mandar foto)
+  // Extrai attachments das tool calls (DANI quer mandar foto OU arquivo)
   const attachments: DaniAttachment[] = [];
   for (const tc of generation.toolCalls) {
     if (tc.name === 'buscar_produto_detalhe') {
@@ -223,6 +224,31 @@ export async function processDaniMessage(
         } catch {
           // ignore - sem foto, manda texto
         }
+      }
+    }
+    // Sprint 4: enviar_arquivo result -> attachment
+    if (tc.name === 'enviar_arquivo') {
+      try {
+        const preview = JSON.parse(tc.resultPreview) as {
+          status?: string;
+          arquivos?: Array<{ nome?: string; tipo?: string; url?: string }>;
+        };
+        if (preview.status === 'ENVIADO' && preview.arquivos) {
+          for (const arq of preview.arquivos.slice(0, 3)) {
+            if (!arq.url) continue;
+            const tipo = (arq.tipo ?? '').toLowerCase();
+            const isImage = tipo.includes('image') || tipo.includes('jpg') || tipo.includes('png');
+            const isVideo = tipo.includes('video') || tipo.includes('mp4');
+            const isAudio = tipo.includes('audio') || tipo.includes('mp3') || tipo.includes('ogg');
+            attachments.push({
+              type: isImage ? 'image' : isVideo ? 'video' : isAudio ? 'audio' : 'document',
+              url: arq.url,
+              fileName: arq.nome,
+            });
+          }
+        }
+      } catch {
+        // ignore
       }
     }
   }
