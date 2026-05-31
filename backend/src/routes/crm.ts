@@ -487,21 +487,23 @@ crm.get('/dashboard', requireAuth, async (c) => {
         return row?.avg_ms ?? 0;
       }),
 
-    // Top 5 produtos mais buscados pela DANI (count das tool calls)
-    // Aproximação via lastSearchedProduct na contact.client_memory
+    // Top 5 produtos: maior estoque (proxy de mais vendidos)
+    // Sem filtro `disponivel` (sync nao popula corretamente esse flag)
     db
       .execute(
         sql`
-          SELECT nome, COUNT(*)::int AS n
+          SELECT nome, estoque
           FROM produtos_catalogo
-          WHERE account_id = ${accountId} AND disponivel = true
-          ORDER BY estoque DESC NULLS LAST
+          WHERE account_id = ${accountId}
+            AND estoque IS NOT NULL
+            AND estoque > 0
+          ORDER BY estoque DESC
           LIMIT 5
         `,
       )
       .then((r) => {
-        const rows = (r as unknown as { rows: Array<{ nome: string; n: number }> }).rows;
-        return rows.map((row) => ({ name: row.nome, count: row.n }));
+        const rows = (r as unknown as { rows: Array<{ nome: string; estoque: number }> }).rows;
+        return rows.map((row) => ({ name: row.nome, count: row.estoque }));
       })
       .catch(() => []),
   ]);
