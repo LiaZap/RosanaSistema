@@ -452,8 +452,9 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
     throw new Error('No WhatsApp session');
   }
 
+  let sentId: string | null = null;
   if (imageUrl) {
-    await sendMediaMessage({
+    const r = await sendMediaMessage({
       settings,
       instanceName: session.instanceName,
       phoneNumber,
@@ -461,9 +462,9 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
       caption: caption ?? '',
       mediaType: 'image',
     });
+    sentId = r.messageId;
   } else if (mediaUrl && mediaType && mediaType !== 'audio') {
-    // PDF / video / image generica
-    await sendMediaMessage({
+    const r = await sendMediaMessage({
       settings,
       instanceName: session.instanceName,
       phoneNumber,
@@ -471,13 +472,26 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
       caption: caption ?? '',
       mediaType: mediaType as 'image' | 'video' | 'document',
     });
+    sentId = r.messageId;
   } else if (text) {
-    await sendTextMessage({
+    const r = await sendTextMessage({
       settings,
       instanceName: session.instanceName,
       phoneNumber,
       text,
     });
+    sentId = r.messageId;
+  }
+
+  // Marca msgId no Redis pra webhook distinguir eco-da-DANI de humano-respondendo
+  if (sentId) {
+    try {
+      const { getRedis } = await import('./queues.js');
+      const redis = getRedis();
+      await redis.set(`fce:wa:sent:${sentId}`, '1', 'EX', 300); // 5min TTL
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, '[Outbound] redis cache failed');
+    }
   }
 }
 

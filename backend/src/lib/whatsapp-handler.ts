@@ -34,6 +34,7 @@ export interface EvolutionMessageEvent {
       extendedTextMessage?: { text?: string };
       imageMessage?: { caption?: string; mimetype?: string };
       documentMessage?: { caption?: string; mimetype?: string };
+      audioMessage?: { mimetype?: string; seconds?: number; ptt?: boolean };
     };
     pushName?: string;
     messageType?: string;
@@ -47,6 +48,10 @@ function isImage(data: EvolutionMessageEvent['data']): boolean {
 function isPdfDocument(data: EvolutionMessageEvent['data']): boolean {
   const mt = data?.message?.documentMessage?.mimetype ?? '';
   return mt === 'application/pdf';
+}
+
+function isAudio(data: EvolutionMessageEvent['data']): boolean {
+  return !!data?.message?.audioMessage;
 }
 
 function getMediaMimetype(data: EvolutionMessageEvent['data']): string | undefined {
@@ -102,20 +107,35 @@ export async function handleMessageUpsert(
     return { skipped: 'no remoteJid' };
   }
 
-  // Mensagem enviada por nos mesmos? Ignora pra nao loop.
-  if (data.key.fromMe) {
-    return { skipped: 'fromMe' };
-  }
-
-  // Grupos sao ignorados em Phase 4 (foco: 1:1)
+  // Grupos sao ignorados (foco: 1:1)
   if (data.key.remoteJid.endsWith('@g.us')) {
     return { skipped: 'group' };
+  }
+
+  // fromMe = mensagem enviada do numero da loja (Bia respondendo no app OU eco do envio da DANI)
+  // Precisamos diferenciar pra pausar a DANI quando humano responde.
+  const fromMe = data.key.fromMe === true;
+  let isDaniEcho = false;
+  if (fromMe && data.key.id) {
+    try {
+      const { getRedis } = await import('./queues.js');
+      const redis = getRedis();
+      const sentByUs = await redis.get(`fce:wa:sent:${data.key.id}`);
+      isDaniEcho = !!sentByUs;
+    } catch {
+      // Redis off -> assume eh DANI (fallback seguro)
+      isDaniEcho = true;
+    }
+    if (isDaniEcho) {
+      return { skipped: 'dani-echo' };
+    }
   }
 
   const rawText = extractText(data);
   const hasImage = isImage(data);
   const hasPdf = isPdfDocument(data);
-  const hasMedia = hasImage || hasPdf;
+  const hasAudio = isAudio(data);
+  const hasMedia = hasImage || hasPdf || hasAudio;
 
   // Sem texto e sem media -> nada pra processar
   if (!hasMedia && (!rawText || rawText.trim().length === 0)) {
@@ -169,6 +189,23 @@ export async function handleMessageUpsert(
     conv = created;
   }
 
+  // fromMe + nao-eco = Bia respondendo no app do WhatsApp da loja.
+  // Salva como mensagem do humano, pausa DANI (status=human), nao processa via IA.
+  if (fromMe) {
+    await saveMessage({
+      conversationId: conv.id,
+      accountId,
+      fromType: 'human',
+      content: rawText ?? (hasMedia ? '[Bia enviou mídia]' : ''),
+    });
+    logger.info(
+      { conversationId: conv.id, msgId: data.key.id },
+      '[WhatsApp] Bia respondeu no app - DANI pausada',
+    );
+    // saveMessage ja atualiza conversation.status=human quando fromType=human
+    return { skipped: 'human-from-whatsapp', contactId: contact.id, conversationId: conv.id };
+  }
+
   // Cliente respondeu - reseta follow-up state (text bruto pra decidir substantivo)
   await resetFollowupOnUserReply(conv.id, rawText ?? '').catch((err) =>
     logger.warn({ err: (err as Error).message }, '[WhatsApp] resetFollowup failed'),
@@ -183,6 +220,12 @@ export async function handleMessageUpsert(
       content: rawText ?? (hasMedia ? '[Cliente enviou mídia]' : ''),
     });
     return { skipped: `status=${conv.status}`, contactId: contact.id, conversationId: conv.id };
+  }
+
+  // Audio do cliente: salva placeholder pra DANI processar como texto
+  // (transcricao via Gemini multimodal vem em sprint futuro)
+  if (hasAudio && !rawText) {
+    logger.info({ conversationId: conv.id }, '[WhatsApp] audio recebido - placeholder');
   }
 
   // Sprint 3: se veio mídia, prepara payload pro worker fazer Vision async.
@@ -211,6 +254,9 @@ export async function handleMessageUpsert(
     }
   }
 
+  // Audio sem transcricao ainda: gera texto placeholder pra DANI nao ignorar
+  const finalText = rawText || (hasAudio ? '[Cliente enviou áudio - peça pra escrever]' : '');
+
   // Enfileira: worker faz Vision (se mediaPayload) + persist + buffer push.
   await inboundQueue.add(
     'persist',
@@ -219,7 +265,7 @@ export async function handleMessageUpsert(
       conversationId: conv.id,
       contactId: contact.id,
       phoneNumber: phone,
-      text: rawText ?? '', // worker enriquece se houver mediaPayload
+      text: finalText, // worker enriquece se houver mediaPayload
       whatsappMessageId: data.key.id,
       mediaPayload,
     },
