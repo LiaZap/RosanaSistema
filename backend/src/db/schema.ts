@@ -111,6 +111,9 @@ export const conversations = pgTable('conversations', {
   assignedTo: uuid('assigned_to').references(() => users.id),
   assignedToAt: timestamp('assigned_to_at', { withTimezone: true }),
   lastMessageAt: timestamp('last_message_at', { withTimezone: true }),
+  // Timestamp da ultima vez que humano (Bia) respondeu - usado pra
+  // auto-reativar DANI apos X minutos de inatividade do humano
+  lastHumanAt: timestamp('last_human_at', { withTimezone: true }),
   // Sprint 5+6: follow-up agent
   followupState: varchar('followup_state', { length: 20 }).default('idle').notNull(),
   followupAttempts: integer('followup_attempts').default(0).notNull(),
@@ -170,6 +173,9 @@ export const ninaSettings = pgTable('nina_settings', {
   // Sprint 1: buffer de mensagens
   bufferWindowMs: integer('buffer_window_ms').default(15000).notNull(),
   bufferMaxMs: integer('buffer_max_ms').default(60000).notNull(),
+  // Minutos de pausa apos humano responder - DANI nao volta a atender
+  // sozinha antes disso. Default 60min.
+  pauseAfterHumanMinutes: integer('pause_after_human_minutes').default(60).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

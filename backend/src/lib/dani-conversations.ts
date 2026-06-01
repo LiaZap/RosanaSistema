@@ -138,14 +138,17 @@ export async function saveMessage(opts: {
     })
     .returning({ id: messages.id });
 
-  // Quando humano envia mensagem, conversation entra em modo human (DANI pausa)
-  // Quando user (cliente) envia, mantém status atual (DANI processa se 'nina')
+  // Quando humano envia mensagem: status=human + lastHumanAt
+  // Quando user (cliente) envia: mantém status (DANI processa se 'nina')
+  const now = new Date();
   const statusUpdate =
-    opts.fromType === 'human' ? { status: 'human' as const } : {};
+    opts.fromType === 'human'
+      ? { status: 'human' as const, lastHumanAt: now }
+      : {};
 
   await db
     .update(conversations)
-    .set({ lastMessageAt: new Date(), updatedAt: new Date(), ...statusUpdate })
+    .set({ lastMessageAt: now, updatedAt: now, ...statusUpdate })
     .where(eq(conversations.id, opts.conversationId));
 
   return saved;

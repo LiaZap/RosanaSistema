@@ -257,7 +257,11 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
 
   // 2. Verifica status da conversation (humano assumiu?)
   const [conv] = await db
-    .select({ status: conversations.status, createdAt: conversations.createdAt })
+    .select({
+      status: conversations.status,
+      lastHumanAt: conversations.lastHumanAt,
+      createdAt: conversations.createdAt,
+    })
     .from(conversations)
     .where(eq(conversations.id, conversationId))
     .limit(1);
@@ -265,6 +269,24 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
   if (!conv) {
     logger.warn({ conversationId }, '[AiReply] conversation not found');
     return;
+  }
+
+  // Auto-reativa DANI apos X minutos sem resposta do humano
+  // (configuracao: nina_settings.pauseAfterHumanMinutes, default 60min)
+  const pauseMinutes = settings?.pauseAfterHumanMinutes ?? 60;
+  if (conv.status === 'human' && conv.lastHumanAt) {
+    const minutesSinceHuman = (Date.now() - conv.lastHumanAt.getTime()) / 60_000;
+    if (minutesSinceHuman >= pauseMinutes) {
+      logger.info(
+        { conversationId, minutesSinceHuman, pauseMinutes },
+        '[AiReply] auto-reativando DANI apos timeout humano',
+      );
+      await db
+        .update(conversations)
+        .set({ status: 'nina', updatedAt: new Date() })
+        .where(eq(conversations.id, conversationId));
+      conv.status = 'nina';
+    }
   }
 
   if (conv.status !== 'nina') {

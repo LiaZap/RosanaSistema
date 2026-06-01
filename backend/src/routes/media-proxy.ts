@@ -235,6 +235,22 @@ media.get('/file/:productId/:idx?', async (c) => {
   }
 });
 
+// ── POST /media/apply-migration-0009 ─────────────────
+media.post('/apply-migration-0009', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    await db.execute(
+      sql`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_human_at timestamp with time zone`,
+    );
+    await db.execute(
+      sql`ALTER TABLE nina_settings ADD COLUMN IF NOT EXISTS pause_after_human_minutes integer NOT NULL DEFAULT 60`,
+    );
+    return c.json({ ok: true, applied: ['conversations.last_human_at', 'nina_settings.pause_after_human_minutes'] });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0008 ─────────────────
 // Aplica ALTER TABLE imagens_minio se ainda nao existe
 media.post('/apply-migration-0008', async (c) => {
