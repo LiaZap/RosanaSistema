@@ -32,6 +32,7 @@ import { transformedUrl } from './cloudinary-client.js';
 import { classifyConversation } from './intent-classifier.js';
 import { fetchMessageMediaBase64 } from './evolution-media.js';
 import { classifyImage } from './gemini-vision.js';
+import { transcribeAudio } from './gemini-audio.js';
 import { updateContactMemory } from './contact-memory.js';
 import { visionPerContact, outboundPerContact } from './rate-limit.js';
 import { logger } from './logger.js';
@@ -93,6 +94,25 @@ async function processInbound(data: InboundJobData): Promise<void> {
         messageKey: mediaPayload.messageKey,
       });
       if (media) {
+        // AUDIO -> transcrever via Gemini
+        if (media.mimetype.startsWith('audio/')) {
+          const transcript = await transcribeAudio({
+            accountId,
+            base64: media.base64,
+            mimetype: media.mimetype,
+          });
+          if (transcript && transcript !== '[audio sem fala]') {
+            text = transcript;
+            messageType = 'text'; // tratado como texto pra DANI processar normal
+            logger.info(
+              { conversationId, chars: transcript.length },
+              '[Inbound] audio transcrito',
+            );
+          } else if (!text) {
+            text = '[Cliente enviou áudio sem fala clara - peça pra escrever]';
+          }
+        } else {
+        // IMAGE / PDF -> Vision classifier
         const vision = await classifyImage({
           accountId,
           base64: media.base64,
@@ -132,9 +152,10 @@ async function processInbound(data: InboundJobData): Promise<void> {
           // Vision retornou null + sem caption = vai uma msg generica
           text = '[Cliente mandou uma imagem - nao foi possivel classificar]';
         }
+        } // end else (audio/image branch)
       } else {
         // Media fetch falhou
-        if (!text) text = '[Cliente mandou uma imagem]';
+        if (!text) text = '[Cliente mandou uma midia]';
       }
     } catch (err) {
       logger.warn(

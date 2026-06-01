@@ -57,7 +57,8 @@ function isAudio(data: EvolutionMessageEvent['data']): boolean {
 function getMediaMimetype(data: EvolutionMessageEvent['data']): string | undefined {
   return (
     data?.message?.imageMessage?.mimetype ??
-    data?.message?.documentMessage?.mimetype
+    data?.message?.documentMessage?.mimetype ??
+    data?.message?.audioMessage?.mimetype
   );
 }
 
@@ -254,8 +255,9 @@ export async function handleMessageUpsert(
     }
   }
 
-  // Audio sem transcricao ainda: gera texto placeholder pra DANI nao ignorar
-  const finalText = rawText || (hasAudio ? '[Cliente enviou áudio - peça pra escrever]' : '');
+  // Audio: worker vai transcrever via Gemini multimodal e usar como text.
+  // Aqui passamos texto vazio - worker enriquece via mediaPayload.
+  const finalText = rawText ?? '';
 
   // Enfileira: worker faz Vision (se mediaPayload) + persist + buffer push.
   await inboundQueue.add(
