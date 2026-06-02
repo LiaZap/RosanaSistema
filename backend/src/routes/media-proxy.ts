@@ -538,7 +538,7 @@ media.get('/find-by-phone', async (c) => {
     const { contacts, conversations, messages } = await import('../db/schema.js');
     const { eq, desc } = await import('drizzle-orm');
     const ct = await db
-      .select({ id: contacts.id, accountId: contacts.accountId, name: contacts.fullName })
+      .select({ id: contacts.id, accountId: contacts.accountId, name: contacts.name })
       .from(contacts)
       .where(eq(contacts.phoneNumber, phone))
       .limit(1);
