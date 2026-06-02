@@ -15,7 +15,9 @@ import { logger } from './logger.js';
  * marcar messages com bufferWindowId no banco.
  */
 
-const TTL_SECONDS = 600; // 10 minutos, evita lixo permanente se falhar
+// TTL alto pra cobrir casos onde DANI esta pausada (cooldown humano de 60min).
+// Quando a pausa expira, o job ai-reply re-roda e precisa do windowId ainda valido.
+const TTL_SECONDS = 5400; // 90 minutos
 
 function keyBuf(cid: string): string {
   return `fce:buf:${cid}`;

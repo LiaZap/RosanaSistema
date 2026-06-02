@@ -305,12 +305,40 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
   }
 
   if (conv.status !== 'nina') {
+    // Calcula quanto falta pro cooldown vencer (pra reagendar)
+    const ref =
+      conv.lastHumanAt?.getTime() ??
+      (await db
+        .select({ lastMessageAt: conversations.lastMessageAt })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .limit(1)
+      )[0]?.lastMessageAt?.getTime() ??
+      null;
+
+    const remainingMs = ref
+      ? Math.max(60_000, pauseMinutes * 60_000 - (Date.now() - ref) + 5_000)
+      : pauseMinutes * 60_000;
+
     logger.info(
-      { conversationId, status: conv.status },
-      '[AiReply] conversation nao esta em modo nina - skip',
+      {
+        conversationId,
+        status: conv.status,
+        retryInMin: Math.round(remainingMs / 60_000),
+      },
+      '[AiReply] conversation nao esta em modo nina - reagenda pos cooldown',
     );
-    // Limpa o buffer pra nao acumular
-    await drainBuffer(conversationId);
+
+    // NAO drena buffer - mantem mensagens pra processar quando cron reativar.
+    // Reagenda este job pra quando o cooldown vencer (com 5s margem).
+    await aiReplyQueue.add(
+      'process',
+      data,
+      {
+        delay: remainingMs,
+        jobId: `ai_${bufferWindowId}_pause_${Date.now()}`,
+      },
+    );
     return;
   }
 

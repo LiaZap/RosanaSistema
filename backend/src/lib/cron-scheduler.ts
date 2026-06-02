@@ -161,13 +161,18 @@ export function startCronJobs(): void {
   //  OU
   //  - status='human' E lastHumanAt IS NULL E lastMessageAt < NOW - pauseMin
   //    (conversas antigas que ficaram com status=human mas sem timestamp)
+  // Apos reativar, dispara ai-reply pra drenar mensagens pendentes
+  // do cliente que chegaram durante a pausa.
   cron.schedule(
     '*/5 * * * *',
     async () => {
       try {
         const { db } = await import('../db/client.js');
-        const { conversations, ninaSettings } = await import('../db/schema.js');
-        const { sql } = await import('drizzle-orm');
+        const { conversations, ninaSettings, contacts, messages } = await import('../db/schema.js');
+        const { sql, eq, and, isNull, desc } = await import('drizzle-orm');
+        const { aiReplyQueue } = await import('./queues.js');
+        const { getRedis } = await import('./queues.js');
+
         const settings = await db
           .select({
             accountId: ninaSettings.accountId,
@@ -175,9 +180,12 @@ export function startCronJobs(): void {
           })
           .from(ninaSettings);
         let total = 0;
+        let triggered = 0;
+        const redis = getRedis();
+
         for (const s of settings) {
           const pauseMinInt = Number.isFinite(s.pauseMin) ? s.pauseMin : 60;
-          const result = await db
+          const reactivated = await db
             .update(conversations)
             .set({ status: 'nina', updatedAt: new Date() })
             .where(
@@ -191,17 +199,90 @@ export function startCronJobs(): void {
                   )
                 )`,
             )
-            .returning({ id: conversations.id });
-          total += result.length;
-          if (result.length > 0) {
+            .returning({
+              id: conversations.id,
+              accountId: conversations.accountId,
+              contactId: conversations.contactId,
+            });
+          total += reactivated.length;
+
+          if (reactivated.length > 0) {
             logger.info(
-              { accountId: s.accountId, pauseMin: pauseMinInt, reactivated: result.length },
+              { accountId: s.accountId, pauseMin: pauseMinInt, reactivated: reactivated.length },
               '[Cron] auto-reativou conversas',
             );
+
+            // Para cada conversa reativada: se tem ultima msg do CLIENTE pendente
+            // (que veio apos a ultima msg do humano), dispara ai-reply.
+            for (const conv of reactivated) {
+              try {
+                // Pega ultima msg da conversa
+                const lastMsg = await db
+                  .select({
+                    id: messages.id,
+                    fromType: messages.fromType,
+                    bufferWindowId: messages.bufferWindowId,
+                  })
+                  .from(messages)
+                  .where(eq(messages.conversationId, conv.id))
+                  .orderBy(desc(messages.createdAt))
+                  .limit(1);
+
+                if (!lastMsg[0] || lastMsg[0].fromType !== 'user') continue;
+
+                // Pega phone do contato
+                const ct = await db
+                  .select({ phone: contacts.phoneNumber })
+                  .from(contacts)
+                  .where(eq(contacts.id, conv.contactId))
+                  .limit(1);
+                if (!ct[0]) continue;
+
+                // Usa bufferWindowId existente ou gera novo
+                let windowId = lastMsg[0].bufferWindowId;
+                if (!windowId) {
+                  const { randomUUID } = await import('crypto');
+                  windowId = randomUUID();
+                  await db
+                    .update(messages)
+                    .set({ bufferWindowId: windowId })
+                    .where(
+                      and(
+                        eq(messages.conversationId, conv.id),
+                        isNull(messages.bufferWindowId),
+                        eq(messages.fromType, 'user'),
+                      ),
+                    );
+                  // Persiste no buffer Redis pra drenar
+                  await redis.set(`fce:buf:${conv.id}:win`, windowId, 'EX', 600);
+                }
+
+                await aiReplyQueue.add(
+                  'process',
+                  {
+                    accountId: conv.accountId,
+                    conversationId: conv.id,
+                    contactId: conv.contactId,
+                    phoneNumber: ct[0].phone,
+                    bufferWindowId: windowId,
+                  },
+                  {
+                    jobId: `ai_reactivate_${conv.id}_${Date.now()}`,
+                    delay: 1500, // pequena margem
+                  },
+                );
+                triggered++;
+              } catch (err) {
+                logger.warn(
+                  { conversationId: conv.id, err: (err as Error).message },
+                  '[Cron] falha ao disparar ai-reply pos reativacao',
+                );
+              }
+            }
           }
         }
         if (total > 0) {
-          logger.info({ total }, '[Cron] auto-reactivate done');
+          logger.info({ total, triggered }, '[Cron] auto-reactivate done');
         }
       } catch (err) {
         logger.error({ err: (err as Error).message }, '[Cron] auto-reactivate error');

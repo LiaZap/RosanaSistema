@@ -529,6 +529,97 @@ media.post('/force-reactivate-all', async (c) => {
   }
 });
 
+// ── POST /media/force-reply ─────────────────────
+// Forca DANI a responder uma conversa especifica AGORA.
+// Util quando cliente respondeu durante pausa humana e msg ficou orfa.
+// Usage: POST /media/force-reply?conversationId=XXX
+media.post('/force-reply', async (c) => {
+  const conversationId = c.req.query('conversationId') ?? '';
+  if (!conversationId) return c.json({ error: 'missing conversationId' }, 400);
+  try {
+    const { conversations, contacts, messages } = await import('../db/schema.js');
+    const { eq, desc, and, isNull } = await import('drizzle-orm');
+    const { aiReplyQueue } = await import('../lib/queues.js');
+    const { getRedis } = await import('../lib/queues.js');
+    const { randomUUID } = await import('crypto');
+
+    const conv = await db
+      .select({
+        id: conversations.id,
+        accountId: conversations.accountId,
+        contactId: conversations.contactId,
+        status: conversations.status,
+      })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (!conv[0]) return c.json({ error: 'conversation not found' }, 404);
+
+    // Garante status nina
+    if (conv[0].status !== 'nina') {
+      await db
+        .update(conversations)
+        .set({ status: 'nina', updatedAt: new Date() })
+        .where(eq(conversations.id, conversationId));
+    }
+
+    const ct = await db
+      .select({ phone: contacts.phoneNumber })
+      .from(contacts)
+      .where(eq(contacts.id, conv[0].contactId))
+      .limit(1);
+    if (!ct[0]) return c.json({ error: 'contact not found' }, 404);
+
+    // Pega ultima msg
+    const lastMsg = await db
+      .select({ id: messages.id, bufferWindowId: messages.bufferWindowId, fromType: messages.fromType })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    if (!lastMsg[0]) return c.json({ error: 'no messages' }, 400);
+    if (lastMsg[0].fromType !== 'user') {
+      return c.json({ error: 'ultima msg nao eh do cliente', fromType: lastMsg[0].fromType }, 400);
+    }
+
+    let windowId = lastMsg[0].bufferWindowId;
+    if (!windowId) {
+      windowId = randomUUID();
+      await db
+        .update(messages)
+        .set({ bufferWindowId: windowId })
+        .where(
+          and(
+            eq(messages.conversationId, conversationId),
+            isNull(messages.bufferWindowId),
+            eq(messages.fromType, 'user'),
+          ),
+        );
+      const redis = getRedis();
+      await redis.set(`fce:buf:${conversationId}:win`, windowId, 'EX', 600);
+    }
+
+    await aiReplyQueue.add(
+      'process',
+      {
+        accountId: conv[0].accountId,
+        conversationId,
+        contactId: conv[0].contactId,
+        phoneNumber: ct[0].phone,
+        bufferWindowId: windowId,
+      },
+      {
+        jobId: `ai_force_${conversationId}_${Date.now()}`,
+        delay: 100,
+      },
+    );
+
+    return c.json({ ok: true, conversationId, windowId, queued: true });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0011 ─────────────────
 media.post('/apply-migration-0011', async (c) => {
   try {
