@@ -423,6 +423,36 @@ media.get('/pipeline-debug', async (c) => {
   }
 });
 
+// ── GET /media/list-deals ───────────────────────────
+// Lista deals direto sem auth pra debug
+media.get('/list-deals', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  try {
+    const { deals, contacts, pipelineStages } = await import('../db/schema.js');
+    const { eq, sql } = await import('drizzle-orm');
+    const rows = await db
+      .select({
+        id: deals.id,
+        title: deals.title,
+        value: deals.value,
+        stageId: deals.stageId,
+        stageName: pipelineStages.name,
+        contactName: contacts.name,
+        createdByAi: deals.createdByAi,
+        conversationId: deals.conversationId,
+      })
+      .from(deals)
+      .leftJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+      .leftJoin(contacts, eq(deals.contactId, contacts.id))
+      .where(eq(deals.accountId, accountId));
+    void sql;
+    return c.json({ total: rows.length, deals: rows });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/backfill-deals ──────────────────────
 // Cria deal pra cada conversation que ainda não tem.
 // Pra cobrir conversas anteriores ao auto-deal funcionando.
