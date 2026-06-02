@@ -15,6 +15,7 @@ import LibraryPage from './pages/Library';
 import OnboardingPage from './pages/Onboarding';
 import PerfilPage from './pages/Perfil';
 import RequireAdmin from './components/RequireAdmin';
+import AdminUsersPage from './pages/AdminUsers';
 
 export default function App() {
   return (
@@ -91,6 +92,16 @@ export default function App() {
           element={
             <RequireAdmin>
               <CloudinaryPage />
+            </RequireAdmin>
+          }
+        />
+
+        {/* Super-admin only */}
+        <Route
+          path="/admin/users"
+          element={
+            <RequireAdmin>
+              <AdminUsersPage />
             </RequireAdmin>
           }
         />

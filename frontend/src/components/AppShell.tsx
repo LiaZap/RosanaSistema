@@ -16,6 +16,8 @@ interface NavItem {
   icon: ReactNode;
   /** Se true, esta entrada so aparece pra owner/admin/superadmin (AX) */
   adminOnly?: boolean;
+  /** Se true, so aparece pra isSuperAdmin */
+  superAdminOnly?: boolean;
 }
 
 interface NavSection {
@@ -23,6 +25,8 @@ interface NavSection {
   items: NavItem[];
   /** Se true, secao inteira so aparece pra admin */
   adminOnly?: boolean;
+  /** Se true, secao inteira so aparece pra superAdmin */
+  superAdminOnly?: boolean;
 }
 
 // SVG icons - clean, monocromáticos
@@ -63,6 +67,12 @@ const I = {
   menu: (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>
   ),
+  shield: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
+  ),
+  users: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
+  ),
 };
 
 const NAV_SECTIONS: NavSection[] = [
@@ -98,6 +108,13 @@ const NAV_SECTIONS: NavSection[] = [
       { to: '/whatsapp', label: 'WhatsApp', icon: I.whatsapp, adminOnly: true },
       { to: '/bling', label: 'Bling ERP', icon: I.bling, adminOnly: true },
       { to: '/cloudinary', label: 'Cloudinary', icon: I.cloud, adminOnly: true },
+    ],
+  },
+  {
+    label: 'Super Admin',
+    superAdminOnly: true,
+    items: [
+      { to: '/admin/users', label: 'Usuarios & Logins', icon: I.users, superAdminOnly: true },
     ],
   },
 ];
@@ -143,21 +160,27 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
 
   // Admin = super admin OU owner/admin no account ativo
   // Cliente final (Rosana) = manager/sdr → ve so o basico
+  const isSuperAdmin = !!me?.user.isSuperAdmin;
   const isAdmin =
     !!me &&
-    (me.user.isSuperAdmin ||
+    (isSuperAdmin ||
       (account?.role === 'owner' || account?.role === 'admin'));
 
   // Enquanto carrega o /me, esconde itens admin pra evitar flash
   const visibleSections = NAV_SECTIONS
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => isAdmin || !item.adminOnly),
+      items: section.items.filter((item) => {
+        if (item.superAdminOnly) return isSuperAdmin;
+        if (item.adminOnly) return isAdmin;
+        return true;
+      }),
     }))
-    .filter(
-      (section) =>
-        section.items.length > 0 && (isAdmin || !section.adminOnly),
-    );
+    .filter((section) => {
+      if (section.superAdminOnly) return isSuperAdmin && section.items.length > 0;
+      if (section.adminOnly) return isAdmin && section.items.length > 0;
+      return section.items.length > 0;
+    });
 
   return (
     <div className="min-h-screen bg-background flex">

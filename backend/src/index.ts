@@ -8,6 +8,7 @@ import { startCronJobs } from './lib/cron-scheduler.js';
 import { startWorkers, stopWorkers } from './lib/workers.js';
 import { closeQueues } from './lib/queues.js';
 import authRoutes from './routes/auth.js';
+import adminRoutes from './routes/admin.js';
 import healthRoutes from './routes/health.js';
 import daniRoutes from './routes/dani.js';
 import blingRoutes from './routes/bling.js';
@@ -41,6 +42,7 @@ app.onError(errorHandler);
 // ── Routes ───────────────────────────────────────────
 
 app.route('/auth', authRoutes);
+app.route('/admin', adminRoutes);
 app.route('/dani', daniRoutes);
 app.route('/bling', blingRoutes);
 app.route('/whatsapp', whatsappRoutes);
