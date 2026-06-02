@@ -32,6 +32,13 @@ interface DashboardKpis {
   aiPerformance: { nina: number; human: number; total: number; autonomyPct: number };
   avgResponseMs: number;
   topProducts: Array<{ name: string; count: number }>;
+  funnel?: {
+    contatos: number;
+    qualificados: number;
+    dealsCriados: number;
+    ganhos: number;
+    valorGanho: number;
+  };
 }
 
 interface CronJob {
@@ -257,6 +264,18 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Funil de conversão */}
+          {kpis?.funnel && (
+            <Section
+              title="Funil de conversão"
+              subtitle="Últimos 30 dias · cliente → ganho"
+            >
+              <div className="material p-5">
+                <FunnelChart funnel={kpis.funnel} />
+              </div>
+            </Section>
+          )}
+
           {/* Cron + Health */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {cronJobs.length > 0 && (
@@ -310,5 +329,82 @@ export default function DashboardPage() {
         </div>
       )}
     </AppShell>
+  );
+}
+
+function FunnelChart({
+  funnel,
+}: {
+  funnel: { contatos: number; qualificados: number; dealsCriados: number; ganhos: number; valorGanho: number };
+}) {
+  const steps = [
+    { label: 'Contatos', value: funnel.contatos, color: 'var(--info)' },
+    { label: 'Qualificados', value: funnel.qualificados, color: 'var(--warning)' },
+    { label: 'Deals criados', value: funnel.dealsCriados, color: 'var(--primary)' },
+    { label: 'Ganhos', value: funnel.ganhos, color: 'var(--success)' },
+  ];
+  const max = Math.max(...steps.map((s) => s.value), 1);
+  const overallConv =
+    funnel.contatos > 0 ? Math.round((funnel.ganhos / funnel.contatos) * 100) : 0;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between mb-2">
+        <span className="text-xs font-mono uppercase" style={{ color: 'var(--text-3)' }}>
+          Taxa de conversão geral
+        </span>
+        <span className="text-2xl font-bold mono" style={{ color: 'var(--primary-text)' }}>
+          {overallConv}%
+        </span>
+      </div>
+      {steps.map((s, i) => {
+        const w = Math.max(8, (s.value / max) * 100);
+        const convFromPrev =
+          i === 0 ? null : steps[i - 1].value > 0 ? Math.round((s.value / steps[i - 1].value) * 100) : 0;
+        return (
+          <div key={s.label} className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-medium" style={{ color: 'var(--text-2)' }}>
+                {s.label}
+              </span>
+              <div className="flex items-center gap-2">
+                {convFromPrev != null && (
+                  <span className="font-mono" style={{ color: 'var(--text-3)' }}>
+                    {convFromPrev}%
+                  </span>
+                )}
+                <span className="font-bold mono tabular-nums" style={{ color: 'var(--text-1)' }}>
+                  {s.value}
+                </span>
+              </div>
+            </div>
+            <div
+              className="h-7 rounded-md transition-all"
+              style={{
+                width: `${w}%`,
+                background: `color-mix(in oklch, ${s.color} 25%, transparent)`,
+                borderLeft: `3px solid ${s.color}`,
+              }}
+            />
+          </div>
+        );
+      })}
+      {funnel.valorGanho > 0 && (
+        <div
+          className="mt-3 p-2.5 rounded-md text-xs"
+          style={{
+            background: 'var(--success-bg)',
+            color: 'var(--success)',
+            border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
+          }}
+        >
+          💰 Valor ganho:{' '}
+          <span className="font-mono font-bold tabular-nums">
+            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+              funnel.valorGanho,
+            )}
+          </span>
+        </div>
+      )}
+    </div>
   );
 }

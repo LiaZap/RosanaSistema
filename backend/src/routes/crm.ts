@@ -508,6 +508,56 @@ crm.get('/dashboard', requireAuth, async (c) => {
       .catch(() => []),
   ]);
 
+  // Funil de conversão (últimos 30 dias)
+  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const [funnel] = await Promise.all([
+    Promise.all([
+      // Total de contatos novos (clientes que escreveram)
+      db
+        .execute(sql`
+          SELECT COUNT(DISTINCT contact_id)::int AS n
+          FROM conversations
+          WHERE account_id = ${accountId} AND created_at >= ${thirtyDaysAgo}
+        `)
+        .then((r) => (r as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0),
+      // Conversas qualificadas (lead_score >= 50)
+      db
+        .execute(sql`
+          SELECT COUNT(*)::int AS n
+          FROM conversations
+          WHERE account_id = ${accountId}
+            AND created_at >= ${thirtyDaysAgo}
+            AND lead_score >= 50
+        `)
+        .then((r) => (r as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0),
+      // Deals criados
+      db
+        .execute(sql`
+          SELECT COUNT(*)::int AS n
+          FROM deals
+          WHERE account_id = ${accountId} AND created_at >= ${thirtyDaysAgo}
+        `)
+        .then((r) => (r as unknown as { rows: Array<{ n: number }> }).rows[0]?.n ?? 0),
+      // Deals na stage Ganho
+      db
+        .execute(sql`
+          SELECT COUNT(*)::int AS n, COALESCE(SUM(value), 0) AS val
+          FROM deals d
+          JOIN pipeline_stages s ON s.id = d.stage_id
+          WHERE d.account_id = ${accountId}
+            AND d.created_at >= ${thirtyDaysAgo}
+            AND LOWER(s.name) LIKE '%ganho%'
+        `)
+        .then((r) => {
+          const row = (r as unknown as { rows: Array<{ n: number; val: string }> }).rows[0];
+          return { count: row?.n ?? 0, value: Number(row?.val ?? 0) };
+        }),
+    ]),
+  ]);
+
+  const [novosContatos, qualificados, dealsCriados, ganhos] = funnel;
+
   // Delta percentual de mensagens
   const messagesDelta =
     msgsYesterday > 0
@@ -529,6 +579,13 @@ crm.get('/dashboard', requireAuth, async (c) => {
     aiPerformance,
     avgResponseMs,
     topProducts,
+    funnel: {
+      contatos: novosContatos,
+      qualificados,
+      dealsCriados,
+      ganhos: ganhos.count,
+      valorGanho: ganhos.value,
+    },
   });
 });
 

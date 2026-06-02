@@ -103,6 +103,7 @@ export default function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -114,7 +115,12 @@ export default function AuthPage() {
       if (isLogin) {
         await api.post('/auth/login', { email, password });
       } else {
-        await api.post('/auth/signup', { email, password, fullName: fullName || undefined });
+        await api.post('/auth/signup', {
+          email,
+          password,
+          fullName: fullName || undefined,
+          workspaceName: workspaceName || undefined,
+        });
       }
       navigate('/dashboard');
     } catch (err) {
@@ -168,17 +174,32 @@ export default function AuthPage() {
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {!isLogin && (
-              <div>
-                <label className="field-label">Nome completo</label>
-                <AuthInput
-                  icon="user"
-                  type="text"
-                  value={fullName}
-                  onChange={setFullName}
-                  placeholder="Seu nome"
-                  autoComplete="name"
-                />
-              </div>
+              <>
+                <div>
+                  <label className="field-label">Nome completo</label>
+                  <AuthInput
+                    icon="user"
+                    type="text"
+                    value={fullName}
+                    onChange={setFullName}
+                    placeholder="Seu nome"
+                    autoComplete="name"
+                  />
+                </div>
+                <div>
+                  <label className="field-label">Nome do workspace</label>
+                  <AuthInput
+                    icon="user"
+                    type="text"
+                    value={workspaceName}
+                    onChange={setWorkspaceName}
+                    placeholder="Minha Loja"
+                  />
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
+                    Deixe em branco se for entrar numa conta existente (via convite).
+                  </p>
+                </div>
+              </>
             )}
 
             <div>

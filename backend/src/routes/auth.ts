@@ -13,7 +13,19 @@ const signupSchema = z.object({
   email: z.string().email('Invalid email'),
   password: z.string().min(8, 'Password must be at least 8 characters').max(128),
   fullName: z.string().min(1).max(255).optional(),
+  workspaceName: z.string().min(2).max(255).optional(),
 });
+
+// Slug-ify simples (lowercase, sem acento, hifen)
+function slugify(s: string): string {
+  return s
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 50);
+}
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email'),
@@ -33,7 +45,7 @@ auth.post('/signup', async (c) => {
     throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
   }
 
-  const { email, password, fullName } = parsed.data;
+  const { email, password, fullName, workspaceName } = parsed.data;
   const emailLower = email.toLowerCase().trim();
 
   const [existing] = await db
@@ -89,6 +101,38 @@ auth.post('/signup', async (c) => {
     logger.info(
       { userId: newUser.id, accountId: account.id },
       'Bootstrap: first user created as owner',
+    );
+  } else if (workspaceName) {
+    // Multi-tenant self-service: cria workspace novo + owner
+    const baseSlug = slugify(workspaceName);
+    let slug = baseSlug;
+    let attempt = 0;
+    while (attempt < 10) {
+      const [existsSlug] = await db
+        .select({ id: accounts.id })
+        .from(accounts)
+        .where(eq(accounts.slug, slug))
+        .limit(1);
+      if (!existsSlug) break;
+      attempt++;
+      slug = `${baseSlug}-${attempt + 1}`;
+    }
+
+    const [account] = await db
+      .insert(accounts)
+      .values({ name: workspaceName.slice(0, 255), slug, plan: 'pro' })
+      .returning();
+
+    await db.insert(accountMembers).values({
+      accountId: account.id,
+      userId: newUser.id,
+      role: 'owner',
+      status: 'active',
+    });
+
+    logger.info(
+      { userId: newUser.id, accountId: account.id, slug },
+      'Self-service: new workspace created',
     );
   }
 

@@ -131,15 +131,34 @@ export default function PipelinePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
+  const [search, setSearch] = useState('');
+  const [filterAi, setFilterAi] = useState<'all' | 'ai' | 'human'>('all');
+
+  const filteredDeals = useMemo(() => {
+    let arr = deals;
+    if (search) {
+      const q = search.toLowerCase();
+      arr = arr.filter(
+        (d) =>
+          d.title.toLowerCase().includes(q) ||
+          d.contactName?.toLowerCase().includes(q) ||
+          d.contactPhone.includes(q),
+      );
+    }
+    if (filterAi === 'ai') arr = arr.filter((d) => d.createdByAi);
+    if (filterAi === 'human') arr = arr.filter((d) => !d.createdByAi);
+    return arr;
+  }, [deals, search, filterAi]);
+
   const dealsByStage = useMemo(() => {
     const map = new Map<string, Deal[]>();
     for (const stage of stages) map.set(stage.id, []);
-    for (const d of deals) {
+    for (const d of filteredDeals) {
       if (!map.has(d.stageId)) map.set(d.stageId, []);
       map.get(d.stageId)!.push(d);
     }
     return map;
-  }, [stages, deals]);
+  }, [stages, filteredDeals]);
 
   const summaryByStage = useMemo(() => {
     const map = new Map<string, SummaryRow>();
@@ -254,6 +273,48 @@ export default function PipelinePage() {
           </div>
         </div>
       )}
+
+      {/* Toolbar: busca + filtros */}
+      <div
+        className="flex items-center gap-3 px-3 py-2 border-b"
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
+      >
+        <div className="relative flex-1 max-w-md">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar deal, contato ou telefone..."
+            className="input-base text-xs pl-8"
+          />
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ color: 'var(--text-3)' }}
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M21 21l-4.3-4.3" />
+          </svg>
+        </div>
+        <div className="seg">
+          <button aria-pressed={filterAi === 'all'} onClick={() => setFilterAi('all')}>
+            Todos
+          </button>
+          <button aria-pressed={filterAi === 'ai'} onClick={() => setFilterAi('ai')}>
+            ✦ DANI
+          </button>
+          <button aria-pressed={filterAi === 'human'} onClick={() => setFilterAi('human')}>
+            Manual
+          </button>
+        </div>
+        <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
+          {filteredDeals.length} / {deals.length}
+        </span>
+      </div>
 
       {/* Kanban - grid responsivo SEM rolagem lateral */}
       <div className="flex-1 p-2 overflow-hidden">

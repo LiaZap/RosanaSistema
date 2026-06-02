@@ -117,6 +117,20 @@ export async function createDealIfBuyIntent(opts: {
     '[AutoDeal] criado automaticamente pela DANI',
   );
 
+  // Emite evento SSE pro frontend mostrar notificação
+  try {
+    const { emitEvent } = await import('./events-stream.js');
+    emitEvent({
+      type: 'deal:created',
+      accountId: opts.accountId,
+      dealId: deal.id,
+      title,
+      byAi: true,
+    });
+  } catch (err) {
+    logger.warn({ err: (err as Error).message }, '[AutoDeal] emit failed');
+  }
+
   return { created: true, dealId: deal.id };
 }
 
