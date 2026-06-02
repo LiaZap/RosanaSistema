@@ -393,6 +393,36 @@ media.get('/conv-status', async (c) => {
   }
 });
 
+// ── GET /media/pipeline-debug ───────────────────────
+// Diagnóstico: quantas conversations / contacts / deals / stages
+media.get('/pipeline-debug', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  try {
+    const { sql } = await import('drizzle-orm');
+    const stats = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM conversations WHERE account_id = ${accountId}) AS total_convs,
+        (SELECT COUNT(*)::int FROM conversations WHERE account_id = ${accountId} AND status='nina') AS convs_nina,
+        (SELECT COUNT(*)::int FROM conversations WHERE account_id = ${accountId} AND status='human') AS convs_human,
+        (SELECT COUNT(*)::int FROM conversations WHERE account_id = ${accountId} AND status='closed') AS convs_closed,
+        (SELECT COUNT(*)::int FROM contacts WHERE account_id = ${accountId}) AS total_contacts,
+        (SELECT COUNT(*)::int FROM deals WHERE account_id = ${accountId}) AS total_deals,
+        (SELECT COUNT(*)::int FROM pipeline_stages WHERE account_id = ${accountId}) AS total_stages
+    `);
+    const row = (stats as unknown as { rows: Array<Record<string, number>> }).rows[0];
+    const stages = await db.execute(sql`
+      SELECT name, position FROM pipeline_stages WHERE account_id = ${accountId} ORDER BY position
+    `);
+    return c.json({
+      ...row,
+      stages: (stages as unknown as { rows: Array<Record<string, unknown>> }).rows,
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/backfill-deals ──────────────────────
 // Cria deal pra cada conversation que ainda não tem.
 // Pra cobrir conversas anteriores ao auto-deal funcionando.
@@ -413,13 +443,13 @@ media.post('/backfill-deals', async (c) => {
     if (!stage) return c.json({ error: 'pipeline stages nao configurado' }, 400);
 
     // Conversations que NAO tem deal ainda (LEFT JOIN deals IS NULL)
+    // Inclui TODOS status (mesmo closed) - se quer fechado, vai pra stage Ganho/Perdido depois
     const convs = await db.execute(sql`
-      SELECT c.id AS conv_id, c.contact_id, ct.name AS contact_name
+      SELECT c.id AS conv_id, c.contact_id, ct.name AS contact_name, c.status
       FROM conversations c
       JOIN contacts ct ON ct.id = c.contact_id
-      LEFT JOIN deals d ON d.conversation_id = c.id
+      LEFT JOIN deals d ON d.contact_id = c.contact_id AND d.account_id = c.account_id
       WHERE c.account_id = ${accountId}
-        AND c.status != 'closed'
         AND d.id IS NULL
     `);
     const rows = (
