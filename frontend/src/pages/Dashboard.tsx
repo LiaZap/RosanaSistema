@@ -4,6 +4,7 @@ import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import KPI from '../components/ui/KPI';
 import Section from '../components/ui/Section';
+import { CountUp } from '../components/ui/CountUp';
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
@@ -118,42 +119,38 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="space-y-6">
-          {/* KPIs primários */}
+          {/* KPIs primários — primeiro destacado com Sparkline */}
           {kpis && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
               <KPI
                 label="Mensagens hoje"
-                value={kpis.messagesToday}
+                featured
+                value={<CountUp value={kpis.messagesToday} />}
                 delta={{
                   value: kpis.messagesDelta,
                   direction:
                     kpis.messagesDelta > 0 ? 'up' : kpis.messagesDelta < 0 ? 'down' : 'neutral',
                 }}
-                accent="brand"
                 hint={`${kpis.messagesYesterday} ontem`}
+                spark={kpis.messagesLast7Days.map((d) => d.count)}
               />
               <KPI
                 label="DANI atendendo"
-                value={kpis.conversations.nina}
-                accent="brand"
+                value={<CountUp value={kpis.conversations.nina} />}
                 hint={`${kpis.conversations.human} humano · ${kpis.conversations.paused} pausado`}
               />
               <KPI
                 label="Autonomia DANI"
-                value={`${kpis.aiPerformance.autonomyPct}%`}
-                accent={
-                  kpis.aiPerformance.autonomyPct >= 80
-                    ? 'success'
-                    : kpis.aiPerformance.autonomyPct >= 50
-                      ? 'warning'
-                      : 'danger'
+                value={
+                  <span className="mono">
+                    <CountUp value={kpis.aiPerformance.autonomyPct} />%
+                  </span>
                 }
                 hint={`${kpis.aiPerformance.total} conversas 7d`}
               />
               <KPI
                 label="Tempo médio resposta"
                 value={fmtDuration(kpis.avgResponseMs)}
-                accent="info"
                 hint="DANI nos últimos 7 dias"
               />
             </div>
@@ -162,22 +159,19 @@ export default function DashboardPage() {
           {/* KPIs secundários */}
           {kpis && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <KPI label="Contatos" value={kpis.contactsTotal} accent="neutral" />
+              <KPI label="Contatos" value={<CountUp value={kpis.contactsTotal} />} />
               <KPI
                 label="Produtos sincronizados"
-                value={kpis.produtosTotal}
-                accent="success"
+                value={<CountUp value={kpis.produtosTotal} />}
                 hint="Bling ERP"
               />
               <KPI
                 label="Agendamentos semana"
-                value={kpis.appointmentsThisWeek}
-                accent="info"
+                value={<CountUp value={kpis.appointmentsThisWeek} />}
               />
               <KPI
                 label="Deals do mês"
-                value={kpis.dealsThisMonth.count}
-                accent="success"
+                value={<CountUp value={kpis.dealsThisMonth.count} />}
                 hint={fmtBRL(kpis.dealsThisMonth.value)}
               />
             </div>
