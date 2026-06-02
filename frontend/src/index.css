@@ -315,7 +315,30 @@
   .dani-av.xl { width: 88px; height: 88px; font-size: 32px; }
 
   /* ── CONVERSATION BUBBLES ──────────── */
-  .bubble-user {
+  /* Cliente (lead) - lado esquerdo, fundo claro */
+  .bubble-client {
+    align-self: flex-start;
+    max-width: 80%;
+    background: var(--bg-surface);
+    color: var(--text-1);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    border-radius: 4px 14px 14px 14px;
+    font-size: 13.5px;
+  }
+  /* DANI - lado direito, violeta (assinatura constante) */
+  .bubble-nina {
+    align-self: flex-end;
+    max-width: 80%;
+    background: var(--dani-bg);
+    color: var(--dani-text);
+    border: 1px solid color-mix(in oklch, var(--dani) 25%, transparent);
+    padding: 10px 14px;
+    border-radius: 14px 4px 14px 14px;
+    font-size: 13.5px;
+  }
+  /* Humano (Bia) - lado direito, primary */
+  .bubble-human {
     align-self: flex-end;
     max-width: 80%;
     background: var(--primary);
@@ -324,26 +347,8 @@
     border-radius: 14px 4px 14px 14px;
     font-size: 13.5px;
   }
-  .bubble-nina {
-    align-self: flex-start;
-    max-width: 80%;
-    background: var(--dani-bg);
-    color: var(--dani-text);
-    border: 1px solid color-mix(in oklch, var(--dani) 25%, transparent);
-    padding: 10px 14px;
-    border-radius: 4px 14px 14px 14px;
-    font-size: 13.5px;
-  }
-  .bubble-human {
-    align-self: flex-end;
-    max-width: 80%;
-    background: var(--info-bg);
-    color: var(--info);
-    border: 1px solid color-mix(in oklch, var(--info) 25%, transparent);
-    padding: 10px 14px;
-    border-radius: 14px 4px 14px 14px;
-    font-size: 13.5px;
-  }
+  /* Alias retrocompat */
+  .bubble-user { @apply bubble-human; }
 
   /* ── STAT CARD (KPI) ───────────────── */
   .kpi-card {

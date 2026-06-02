@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import { Avatar } from '../components/ui/avatar';
+import { DaniAvatar } from '../components/ui/DaniAvatar';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -400,7 +401,7 @@ export default function ConversationDetailPage() {
                   )}
                   <div
                     className={`whitespace-pre-wrap ${
-                      isClient ? 'bubble-nina' : isDani ? 'bubble-user' : 'bubble-human'
+                      isClient ? 'bubble-client' : isDani ? 'bubble-nina' : 'bubble-human'
                     }`}
                   >
                     {m.content ?? <span className="opacity-60">[{m.messageType}]</span>}
@@ -420,17 +421,13 @@ export default function ConversationDetailPage() {
                 </div>
                 {/* Avatar nina/human (direita) */}
                 {!isClient && (
-                  <div className="shrink-0 w-7">
+                  <div className="shrink-0 w-7 flex items-center justify-center">
                     {!sameAuthor && (
-                      <div
-                        className={`avatar-sm font-semibold ${
-                          isDani
-                            ? 'bg-gradient-to-br from-pink-500/40 to-pink-700/30 text-pink-100'
-                            : 'bg-gradient-to-br from-green-500/40 to-green-700/30 text-green-100'
-                        }`}
-                      >
-                        {isDani ? 'D' : isHuman ? 'B' : '?'}
-                      </div>
+                      isDani ? (
+                        <DaniAvatar size="sm" active />
+                      ) : (
+                        <Avatar fallback={isHuman ? 'Bia' : '?'} size="sm" />
+                      )
                     )}
                   </div>
                 )}
