@@ -235,6 +235,98 @@ media.get('/file/:productId/:idx?', async (c) => {
   }
 });
 
+// ── GET /media/conv-status?phone=... ─────────────────
+// Diagnostico completo do status de uma conversa pelo telefone
+media.get('/conv-status', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  const phone = c.req.query('phone') ?? '';
+  if (!accountId || !phone) return c.json({ error: 'missing accountId or phone' }, 400);
+
+  try {
+    const { contacts, conversations, messages } = await import('../db/schema.js');
+    const { and, desc, sql } = await import('drizzle-orm');
+
+    const contact = await db.query.contacts.findFirst({
+      where: and(eq(contacts.accountId, accountId), eq(contacts.phoneNumber, phone)),
+    });
+    if (!contact) return c.json({ error: 'contact not found', phone });
+
+    const conv = await db.query.conversations.findFirst({
+      where: eq(conversations.contactId, contact.id),
+    });
+    if (!conv) return c.json({ error: 'conversation not found', contactId: contact.id });
+
+    const lastMsgs = await db
+      .select({
+        id: messages.id,
+        fromType: messages.fromType,
+        content: messages.content,
+        messageType: messages.messageType,
+        createdAt: messages.createdAt,
+        processedByNina: messages.processedByNina,
+        bufferWindowId: messages.bufferWindowId,
+      })
+      .from(messages)
+      .where(eq(messages.conversationId, conv.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(15);
+
+    const now = Date.now();
+    const minutesSinceHuman = conv.lastHumanAt
+      ? Math.round((now - conv.lastHumanAt.getTime()) / 60000)
+      : null;
+    const minutesSinceLastMsg = conv.lastMessageAt
+      ? Math.round((now - conv.lastMessageAt.getTime()) / 60000)
+      : null;
+
+    // Buffer pendente no Redis
+    let bufferSize = 0;
+    let bufferWindowId: string | null = null;
+    try {
+      const { getRedis } = await import('../lib/queues.js');
+      const redis = getRedis();
+      const bufKey = `fce:buf:${conv.id}`;
+      bufferSize = await redis.llen(bufKey);
+      const winKey = `fce:bufwin:${conv.id}`;
+      bufferWindowId = await redis.get(winKey);
+    } catch {
+      // ignore
+    }
+
+    return c.json({
+      contact: { id: contact.id, name: contact.name, phone: contact.phoneNumber },
+      conversation: {
+        id: conv.id,
+        status: conv.status,
+        lastMessageAt: conv.lastMessageAt,
+        lastHumanAt: conv.lastHumanAt,
+        minutesSinceLastMsg,
+        minutesSinceHuman,
+      },
+      buffer: { size: bufferSize, windowId: bufferWindowId },
+      diagnosis: {
+        daniWillRespond: conv.status === 'nina',
+        humanPaused: conv.status === 'human',
+        shouldAutoReactivate:
+          conv.status === 'human' && minutesSinceHuman !== null && minutesSinceHuman >= 60,
+        unprocessedClientMsgs: lastMsgs.filter(
+          (m) => m.fromType === 'user' && !m.processedByNina,
+        ).length,
+      },
+      lastMessages: lastMsgs.map((m) => ({
+        from: m.fromType,
+        content: m.content?.slice(0, 200) ?? null,
+        type: m.messageType,
+        at: m.createdAt,
+        processed: m.processedByNina,
+        winId: m.bufferWindowId?.slice(0, 8),
+      })),
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message, stack: (err as Error).stack?.slice(0, 500) }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0009 ─────────────────
 media.post('/apply-migration-0009', async (c) => {
   try {
