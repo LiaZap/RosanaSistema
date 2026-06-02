@@ -260,10 +260,12 @@ export default function PipelinePage() {
 
   void me;
 
+  const [showFilters, setShowFilters] = useState(false);
+
   return (
     <AppShell
       title="Pipeline"
-      subtitle={`${deals.length} deals · ${fmtBRL(totalValue)} em valor total`}
+      subtitle={`${stages.length} estágios · arraste para mover`}
       bare
     >
       {error && (
@@ -274,47 +276,82 @@ export default function PipelinePage() {
         </div>
       )}
 
-      {/* Toolbar: busca + filtros */}
+      {/* Toolbar: Filtros + Receita prevista + Novo lead */}
       <div
-        className="flex items-center gap-3 px-3 py-2 border-b"
+        className="flex items-center justify-between gap-3 px-4 py-2.5 border-b"
         style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
       >
-        <div className="relative flex-1 max-w-md">
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar deal, contato ou telefone..."
-            className="input-base text-xs pl-8"
-          />
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
-            style={{ color: 'var(--text-3)' }}
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M21 21l-4.3-4.3" />
+        <button
+          onClick={() => setShowFilters((v) => !v)}
+          className="btn btn-secondary btn-sm flex items-center gap-1.5"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
           </svg>
+          Filtros
+        </button>
+
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
+            Receita prevista{' '}
+            <span className="font-bold" style={{ color: 'var(--text-1)' }}>
+              {fmtBRL(totalValue)}
+            </span>
+          </span>
+          <button
+            onClick={() => openNewDeal(stages[0]?.id ?? '')}
+            disabled={!stages.length}
+            className="btn btn-primary btn-sm flex items-center gap-1.5"
+            style={{ background: 'var(--primary-press)' }}
+          >
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> Novo lead
+          </button>
         </div>
-        <div className="seg">
-          <button aria-pressed={filterAi === 'all'} onClick={() => setFilterAi('all')}>
-            Todos
-          </button>
-          <button aria-pressed={filterAi === 'ai'} onClick={() => setFilterAi('ai')}>
-            ✦ DANI
-          </button>
-          <button aria-pressed={filterAi === 'human'} onClick={() => setFilterAi('human')}>
-            Manual
-          </button>
-        </div>
-        <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
-          {filteredDeals.length} / {deals.length}
-        </span>
       </div>
+
+      {/* Filtros expandidos */}
+      {showFilters && (
+        <div
+          className="flex items-center gap-3 px-4 py-2 border-b"
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-subtle)' }}
+        >
+          <div className="relative flex-1 max-w-md">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar deal, contato ou telefone..."
+              className="input-base text-xs pl-8"
+            />
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: 'var(--text-3)' }}
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="M21 21l-4.3-4.3" />
+            </svg>
+          </div>
+          <div className="seg">
+            <button aria-pressed={filterAi === 'all'} onClick={() => setFilterAi('all')}>
+              Todos
+            </button>
+            <button aria-pressed={filterAi === 'ai'} onClick={() => setFilterAi('ai')}>
+              ✦ DANI
+            </button>
+            <button aria-pressed={filterAi === 'human'} onClick={() => setFilterAi('human')}>
+              Manual
+            </button>
+          </div>
+          <span className="text-xs font-mono" style={{ color: 'var(--text-3)' }}>
+            {filteredDeals.length} / {deals.length}
+          </span>
+        </div>
+      )}
 
       {/* Kanban - grid responsivo SEM rolagem lateral */}
       <div className="flex-1 p-2 overflow-hidden">
@@ -333,51 +370,48 @@ export default function PipelinePage() {
                 onDragOver={(e) => handleDragOver(e, stage.id)}
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => handleDrop(e, stage.id)}
-                className={`min-w-0 rounded-lg border transition-all flex flex-col ${
-                  isOver
-                    ? 'border-primary bg-primary/5 shadow-glow'
-                    : 'border-border bg-card/30'
+                className={`min-w-0 flex flex-col transition-all ${
+                  isOver ? 'rounded-md' : ''
                 }`}
+                style={
+                  isOver
+                    ? {
+                        background: 'color-mix(in oklch, var(--primary) 6%, transparent)',
+                        boxShadow: '0 0 0 2px var(--primary-ring)',
+                      }
+                    : {}
+                }
               >
-                {/* Stage header compacto */}
-                <div className="p-2 border-b border-border relative">
-                  <div
-                    className="absolute top-0 left-0 right-0 h-[2px] rounded-t-lg"
+                {/* Stage header clean (sem filete colorido) */}
+                <div className="px-1 py-2 flex items-center gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
                     style={{ background: color }}
                   />
-                  <div className="flex items-center justify-between gap-1.5 pt-0.5">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-semibold text-foreground text-[10px] uppercase tracking-wider truncate flex items-center gap-1.5">
-                        <span className="badge-dot shrink-0" style={{ background: color }} />
-                        <span className="truncate">{stage.name}</span>
-                      </h3>
-                      <div className="flex items-baseline gap-1 mt-0.5">
-                        <span className="text-sm font-bold text-foreground tabular-nums">
-                          {stageSummary?.count ?? 0}
-                        </span>
-                        {(stageSummary?.totalValue ?? 0) > 0 && (
-                          <span className="text-[10px] text-fce-green font-medium truncate">
-                            {fmtBRL(stageSummary?.totalValue ?? 0)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => openNewDeal(stage.id)}
-                      className="w-5 h-5 rounded border border-border hover:bg-card hover:border-border-strong
-                                 text-muted-foreground hover:text-foreground text-sm leading-none transition-colors shrink-0"
-                      title="Novo deal"
-                    >
-                      +
-                    </button>
-                  </div>
+                  <h3
+                    className="text-[13px] font-semibold flex-1"
+                    style={{ color: 'var(--text-1)', letterSpacing: '-0.005em' }}
+                  >
+                    {stage.name.charAt(0).toUpperCase() + stage.name.slice(1).toLowerCase()}
+                  </h3>
+                  <span
+                    className="text-[12px] font-mono tabular-nums"
+                    style={{ color: 'var(--text-3)' }}
+                  >
+                    {stageSummary?.count ?? 0}
+                  </span>
                 </div>
 
                 {/* Deals scrollable só vertical */}
-                <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto min-h-0">
+                <div
+                  className="flex-1 space-y-2 overflow-y-auto min-h-0 p-1"
+                  style={{
+                    background: isOver ? 'transparent' : 'transparent',
+                  }}
+                >
                   {stageDeals.length === 0 && (
-                    <div className="text-center text-[10px] text-muted-foreground py-6 px-2 border border-dashed border-border/60 rounded-md">
-                      vazio
+                    <div className="text-center text-[10px] py-4" style={{ color: 'var(--text-3)' }}>
+                      —
                     </div>
                   )}
                   {stageDeals.map((deal) => (
@@ -525,74 +559,74 @@ function DealCard({
   onDelete: () => void;
   accentColor: string;
 }) {
+  void accentColor; // não usado no design Studio - card é totalmente clean
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      className={`group card-elev p-2 cursor-grab active:cursor-grabbing
-                  hover:border-border-strong hover:shadow-md transition-all relative overflow-hidden
+      className={`group cursor-grab active:cursor-grabbing transition-all
                   ${dragging ? 'opacity-40 scale-95' : ''}`}
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--r-md)',
+        padding: '10px 12px',
+        boxShadow: 'var(--sh-sm)',
+      }}
     >
-      {/* Filete lateral colorido fino */}
+      {/* Header: avatar + nome + (badge DANI se criado pela IA) */}
+      <div className="flex items-center gap-2 mb-1.5">
+        {deal.createdByAi ? (
+          <DaniAvatar size="sm" />
+        ) : (
+          <Avatar fallback={deal.contactName ?? deal.contactPhone.slice(-2)} size="sm" />
+        )}
+        <span
+          className="text-[13px] font-semibold truncate flex-1"
+          style={{ color: 'var(--text-1)' }}
+        >
+          {deal.contactName ?? `+${deal.contactPhone}`}
+        </span>
+        <button
+          onClick={onDelete}
+          className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          style={{ color: 'var(--text-3)' }}
+          title="Apagar"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Descrição: title do deal (truncate 1 linha) */}
       <div
-        className="absolute top-0 left-0 bottom-0 w-[2px] opacity-70"
-        style={{ background: accentColor }}
-      />
-      <div className="pl-1.5 space-y-1">
-        <div className="flex items-start justify-between gap-1">
-          <h4 className="font-semibold text-foreground text-xs flex-1 leading-snug line-clamp-2">
-            {deal.title}
-          </h4>
-          <div className="flex items-center gap-1 shrink-0">
-            {deal.createdByAi && (
-              <span
-                className="text-[8px] uppercase font-mono font-bold px-1.5 py-0.5 rounded-full"
-                style={{
-                  background: 'var(--dani-bg)',
-                  color: 'var(--dani-text)',
-                  letterSpacing: '0.06em',
-                }}
-                title="Criado automaticamente pela DANI"
-              >
-                ✦ DANI
-              </span>
-            )}
-            <button
-              onClick={onDelete}
-              className="text-muted-foreground/60 hover:text-destructive text-[10px]
-                         opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Apagar"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5">
-          {deal.createdByAi ? (
-            <DaniAvatar size="sm" />
-          ) : (
-            <Avatar fallback={deal.contactName ?? deal.contactPhone.slice(-2)} size="sm" />
-          )}
-          <span className="text-[10px] text-muted-foreground truncate flex-1">
-            {deal.contactName ?? `+${deal.contactPhone}`}
-          </span>
-        </div>
-        <div className="flex items-center justify-between gap-1 pt-0.5">
-          {deal.value ? (
-            <span className="text-xs font-bold text-fce-green tabular-nums truncate">
-              {fmtBRL(deal.value)}
+        className="text-[12px] mb-2 truncate"
+        style={{ color: 'var(--text-2)' }}
+      >
+        {deal.title}
+      </div>
+
+      {/* Footer: badges + valor */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1 flex-wrap">
+          {deal.createdByAi && (
+            <span className="badge b-dani">
+              <span style={{ fontSize: 10 }}>✦</span> Dani
             </span>
-          ) : (
-            <span className="text-[10px] text-muted-foreground">—</span>
           )}
-          <span
-            className="text-[9px] text-muted-foreground shrink-0"
-            title={new Date(deal.updatedAt).toLocaleString('pt-BR')}
-          >
-            {timeAgo(deal.updatedAt)}
-          </span>
         </div>
+        {deal.value ? (
+          <span
+            className="text-[13px] font-bold mono tabular-nums shrink-0"
+            style={{ color: 'var(--text-1)' }}
+          >
+            {fmtBRL(deal.value)}
+          </span>
+        ) : (
+          <span className="text-[11px] mono" style={{ color: 'var(--text-3)' }}>
+            —
+          </span>
+        )}
       </div>
     </div>
   );
