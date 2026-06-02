@@ -1,6 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
+import { CommandPalette, useCmdK } from './ui/CommandPalette';
+import { DirSegment, ThemeToggle } from './ui/ThemeControls';
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
@@ -108,6 +110,9 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
   const location = useLocation();
   const [me, setMe] = useState<MeResponse | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
+
+  useCmdK(() => setCmdkOpen(true));
 
   useEffect(() => {
     api
@@ -249,8 +254,30 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
               <p className="text-[11px] text-muted-foreground truncate mt-0.5">{subtitle}</p>
             )}
           </div>
+
+          {/* Controles globais: ⌘K + direção + tema */}
+          <div className="hidden md:flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setCmdkOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-border bg-bg-subtle hover:bg-bg-surface transition-colors text-xs text-text-2"
+              title="Abrir comandos (⌘K)"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.3-4.3" />
+              </svg>
+              <span className="font-medium">Comandos</span>
+              <span className="kbd">⌘K</span>
+            </button>
+            <DirSegment />
+            <ThemeToggle />
+          </div>
+
           {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
         </header>
+
+        {/* Command Palette */}
+        <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} />
 
         {/* Content */}
         {bare ? (
