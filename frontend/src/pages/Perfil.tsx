@@ -7,18 +7,36 @@ import { DirSegment, ThemeToggle } from '../components/ui/ThemeControls';
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
-  profile: { fullName?: string } | null;
+  profile: {
+    fullName?: string | null;
+    avatarUrl?: string | null;
+    phone?: string | null;
+  } | null;
   accounts: Array<{ accountId: string; role: string; accountName: string; accountSlug: string }>;
 }
 
 export default function PerfilPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
-  const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+
+  // Dados pessoais
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // Trocar senha
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordNotice, setPasswordNotice] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -26,6 +44,8 @@ export default function PerfilPage() {
       .then((data) => {
         setMe(data);
         setFullName(data.profile?.fullName ?? '');
+        setPhone(data.profile?.phone ?? '');
+        setAvatarUrl(data.profile?.avatarUrl ?? '');
         setLoading(false);
       })
       .catch((e) => {
@@ -36,16 +56,48 @@ export default function PerfilPage() {
 
   async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
-    setSaving(true);
-    setError(null);
-    setNotice(null);
+    setSavingProfile(true);
+    setProfileError(null);
+    setProfileNotice(null);
     try {
-      await api.put('/auth/profile', { fullName });
-      setNotice('Perfil atualizado.');
+      await api.put('/auth/profile', {
+        fullName: fullName.trim(),
+        phone: phone.trim(),
+        avatarUrl: avatarUrl.trim() || null,
+      });
+      setProfileNotice('Perfil atualizado.');
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Falha ao salvar');
+      setProfileError(e instanceof ApiError ? e.message : 'Falha ao salvar');
     } finally {
-      setSaving(false);
+      setSavingProfile(false);
+    }
+  }
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordNotice(null);
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('A confirmação não confere com a nova senha.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPasswordError('Nova senha precisa ter no mínimo 8 caracteres.');
+      return;
+    }
+
+    setSavingPassword(true);
+    try {
+      await api.put('/auth/password', { currentPassword, newPassword });
+      setPasswordNotice('Senha alterada com sucesso.');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (e) {
+      setPasswordError(e instanceof ApiError ? e.message : 'Falha ao alterar senha');
+    } finally {
+      setSavingPassword(false);
     }
   }
 
@@ -70,35 +122,11 @@ export default function PerfilPage() {
   return (
     <AppShell title="Perfil" subtitle="Suas configurações pessoais">
       <div className="max-w-3xl mx-auto space-y-5">
-        {notice && (
-          <div
-            className="rounded-md p-3 text-sm"
-            style={{
-              background: 'var(--success-bg)',
-              color: 'var(--success)',
-              border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
-            }}
-          >
-            {notice}
-          </div>
-        )}
-        {error && (
-          <div
-            className="rounded-md p-3 text-sm"
-            style={{
-              background: 'var(--danger-bg)',
-              color: 'var(--danger)',
-              border: '1px solid color-mix(in oklch, var(--danger) 25%, transparent)',
-            }}
-          >
-            {error}
-          </div>
-        )}
-
         {/* Header identidade */}
         <div className="material p-6 flex items-center gap-5">
           <Avatar
             fallback={fullName || me?.user.email || '??'}
+            src={avatarUrl || null}
             size="xl"
           />
           <div className="flex-1">
@@ -125,6 +153,31 @@ export default function PerfilPage() {
             </p>
           </div>
 
+          {profileNotice && (
+            <div
+              className="rounded-md p-2.5 text-xs mb-3"
+              style={{
+                background: 'var(--success-bg)',
+                color: 'var(--success)',
+                border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
+              }}
+            >
+              {profileNotice}
+            </div>
+          )}
+          {profileError && (
+            <div
+              className="rounded-md p-2.5 text-xs mb-3"
+              style={{
+                background: 'var(--danger-bg)',
+                color: 'var(--danger)',
+                border: '1px solid color-mix(in oklch, var(--danger) 25%, transparent)',
+              }}
+            >
+              {profileError}
+            </div>
+          )}
+
           <form onSubmit={handleSaveProfile} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -133,21 +186,156 @@ export default function PerfilPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   className="input-base"
-                  placeholder="Seu nome"
+                  placeholder="Rosana Araujo"
                 />
               </div>
               <div>
-                <label className="field-label">E-mail</label>
+                <label className="field-label">Telefone</label>
                 <input
-                  value={me?.user.email ?? ''}
-                  disabled
-                  className="input-base opacity-60 cursor-not-allowed"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  className="input-base font-mono"
+                  placeholder="+55 31 9 9999-9999"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="field-label">E-mail</label>
+              <input
+                value={me?.user.email ?? ''}
+                disabled
+                className="input-base opacity-60 cursor-not-allowed"
+              />
+              <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
+                E-mail não pode ser alterado por aqui. Entre em contato com o suporte.
+              </p>
+            </div>
+            <div>
+              <label className="field-label">URL da foto (avatar)</label>
+              <input
+                value={avatarUrl}
+                onChange={(e) => setAvatarUrl(e.target.value)}
+                className="input-base font-mono text-xs"
+                placeholder="https://..."
+              />
+              <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
+                Cole a URL pública de uma imagem (Cloudinary, Google Drive público, etc).
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <button type="submit" disabled={savingProfile} className="btn btn-primary btn-md">
+                {savingProfile ? 'Salvando...' : 'Salvar alterações'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Alterar senha */}
+        <div className="material p-5">
+          <div className="mb-4">
+            <h3 className="text-base font-bold" style={{ color: 'var(--text-1)' }}>
+              Alterar senha
+            </h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+              Use senhas fortes (mín. 8 caracteres). Recomendamos misturar letras, números e
+              símbolos.
+            </p>
+          </div>
+
+          {passwordNotice && (
+            <div
+              className="rounded-md p-2.5 text-xs mb-3"
+              style={{
+                background: 'var(--success-bg)',
+                color: 'var(--success)',
+                border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
+              }}
+            >
+              {passwordNotice}
+            </div>
+          )}
+          {passwordError && (
+            <div
+              className="rounded-md p-2.5 text-xs mb-3"
+              style={{
+                background: 'var(--danger-bg)',
+                color: 'var(--danger)',
+                border: '1px solid color-mix(in oklch, var(--danger) 25%, transparent)',
+              }}
+            >
+              {passwordError}
+            </div>
+          )}
+
+          <form onSubmit={handleChangePassword} className="space-y-3">
+            <div>
+              <label className="field-label">Senha atual</label>
+              <div className="relative">
+                <input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className="input-base pr-10"
+                  autoComplete="current-password"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrent((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
+                  style={{ color: 'var(--text-3)' }}
+                  tabIndex={-1}
+                >
+                  {showCurrent ? '◯' : '●'}
+                </button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="field-label">Nova senha</label>
+                <div className="relative">
+                  <input
+                    type={showNew ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="input-base pr-10"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNew((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs"
+                    style={{ color: 'var(--text-3)' }}
+                    tabIndex={-1}
+                  >
+                    {showNew ? '◯' : '●'}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="field-label">Confirmar nova senha</label>
+                <input
+                  type={showNew ? 'text' : 'password'}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="input-base"
+                  autoComplete="new-password"
+                  required
+                  minLength={8}
                 />
               </div>
             </div>
             <div className="flex justify-end">
-              <button type="submit" disabled={saving} className="btn btn-primary btn-md">
-                {saving ? 'Salvando...' : 'Salvar alterações'}
+              <button
+                type="submit"
+                disabled={
+                  savingPassword || !currentPassword || !newPassword || !confirmPassword
+                }
+                className="btn btn-primary btn-md"
+              >
+                {savingPassword ? 'Alterando...' : 'Alterar senha'}
               </button>
             </div>
           </form>
@@ -201,7 +389,10 @@ export default function PerfilPage() {
             </p>
           </div>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 rounded-md" style={{ background: 'var(--bg-subtle)' }}>
+            <div
+              className="flex items-center justify-between p-3 rounded-md"
+              style={{ background: 'var(--bg-subtle)' }}
+            >
               <div>
                 <div className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
                   Tema
@@ -212,7 +403,10 @@ export default function PerfilPage() {
               </div>
               <ThemeToggle />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-md" style={{ background: 'var(--bg-subtle)' }}>
+            <div
+              className="flex items-center justify-between p-3 rounded-md"
+              style={{ background: 'var(--bg-subtle)' }}
+            >
               <div>
                 <div className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
                   Direção de cor

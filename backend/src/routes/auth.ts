@@ -173,10 +173,29 @@ auth.get('/me', requireAuth, async (c) => {
 });
 
 // ── PUT /auth/profile ────────────────────────────────
+const profileSchema = z.object({
+  fullName: z.string().max(255).optional(),
+  phone: z.string().max(20).optional(),
+  avatarUrl: z.string().url().max(500).optional().nullable(),
+});
+
 auth.put('/profile', requireAuth, async (c) => {
   const user = getUser(c);
   const body = await c.req.json();
-  const fullName = typeof body.fullName === 'string' ? body.fullName.trim().slice(0, 255) : '';
+  const parsed = profileSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
+  }
+
+  const updates: {
+    fullName?: string | null;
+    phone?: string | null;
+    avatarUrl?: string | null;
+    updatedAt: Date;
+  } = { updatedAt: new Date() };
+  if (parsed.data.fullName !== undefined) updates.fullName = parsed.data.fullName?.trim() || null;
+  if (parsed.data.phone !== undefined) updates.phone = parsed.data.phone?.trim() || null;
+  if (parsed.data.avatarUrl !== undefined) updates.avatarUrl = parsed.data.avatarUrl || null;
 
   const [existing] = await db
     .select({ id: profiles.id })
@@ -185,17 +204,67 @@ auth.put('/profile', requireAuth, async (c) => {
     .limit(1);
 
   if (existing) {
-    await db
-      .update(profiles)
-      .set({ fullName: fullName || null, updatedAt: new Date() })
-      .where(eq(profiles.userId, user.id));
+    await db.update(profiles).set(updates).where(eq(profiles.userId, user.id));
   } else {
     await db.insert(profiles).values({
       userId: user.id,
-      fullName: fullName || null,
+      fullName: updates.fullName ?? null,
+      phone: updates.phone ?? null,
+      avatarUrl: updates.avatarUrl ?? null,
     });
   }
+  return c.json({ ok: true });
+});
 
+// ── PUT /auth/password ───────────────────────────────
+const passwordSchema = z.object({
+  currentPassword: z.string().min(1, 'Senha atual obrigatória'),
+  newPassword: z
+    .string()
+    .min(8, 'Nova senha precisa ter no mínimo 8 caracteres')
+    .max(128, 'Senha muito longa'),
+});
+
+auth.put('/password', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const parsed = passwordSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
+  }
+  const { currentPassword, newPassword } = parsed.data;
+
+  if (currentPassword === newPassword) {
+    throw new ValidationError('A nova senha precisa ser diferente da atual');
+  }
+
+  // Busca user com hash
+  const [row] = await db
+    .select({ hashedPassword: users.hashedPassword })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  if (!row?.hashedPassword) {
+    throw new ValidationError('Conta sem senha definida');
+  }
+
+  // Verifica senha atual
+  const valid = await verify(row.hashedPassword, currentPassword, ARGON_OPTS);
+  if (!valid) {
+    throw new ValidationError('Senha atual incorreta');
+  }
+
+  // Hash nova senha
+  const newHash = await hash(newPassword, ARGON_OPTS);
+  await db
+    .update(users)
+    .set({ hashedPassword: newHash, updatedAt: new Date() })
+    .where(eq(users.id, user.id));
+
+  // Invalida sessões antigas (mantém a atual)
+  // (Lucia: pra invalidar tudo menos atual precisaria de logica adicional)
+
+  logger.info({ userId: user.id }, '[Auth] password changed');
   return c.json({ ok: true });
 });
 
