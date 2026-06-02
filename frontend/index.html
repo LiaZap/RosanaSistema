@@ -11,8 +11,25 @@
     <title>FCE Studio — Filhos com Estilo</title>
     <script>
       if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        window.addEventListener('load', async () => {
+          try {
+            // Unregister SWs antigos pra invalidar caches
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) {
+              try {
+                await r.unregister();
+              } catch {}
+            }
+            // Apagar todos os caches do navegador
+            if (window.caches) {
+              const keys = await caches.keys();
+              await Promise.all(keys.map((k) => caches.delete(k)));
+            }
+            // Registrar o novo (sem cacheamento, só pra notifications)
+            await navigator.serviceWorker.register('/sw.js', {
+              updateViaCache: 'none',
+            });
+          } catch {}
         });
       }
     </script>

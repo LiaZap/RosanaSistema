@@ -1,70 +1,25 @@
-/* FCE Studio Service Worker — cache estático + offline fallback */
-const CACHE_VERSION = 'fce-v1';
-const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
+/* FCE Studio Service Worker — apenas push notifications + invalidação de caches antigos */
+const CACHE_VERSION = 'fce-v3-no-cache';
 
-const APP_SHELL = ['/', '/manifest.webmanifest'];
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL).catch(() => {})),
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(
-        keys
-          .filter((k) => !k.startsWith(CACHE_VERSION))
-          .map((k) => caches.delete(k)),
-      ),
-    ),
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // Não interceptar API/websocket
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/ws')) return;
-  if (event.request.method !== 'GET') return;
-
-  // Assets estáticos (JS, CSS, fonts, imagens) — cache-first
-  if (url.pathname.match(/\.(js|css|woff2?|ttf|png|jpg|svg|ico|webp)$/)) {
-    event.respondWith(
-      caches.match(event.request).then(
-        (cached) =>
-          cached ||
-          fetch(event.request).then((res) => {
-            if (res.ok) {
-              const clone = res.clone();
-              caches.open(RUNTIME_CACHE).then((cache) => cache.put(event.request, clone));
-            }
-            return res;
-          }),
-      ),
-    );
-    return;
-  }
-
-  // HTML — network-first com fallback cache
-  event.respondWith(
-    fetch(event.request)
-      .then((res) => {
-        if (res.ok) {
-          const clone = res.clone();
-          caches.open(RUNTIME_CACHE).then((cache) => cache.put(event.request, clone));
-        }
-        return res;
-      })
-      .catch(() => caches.match(event.request).then((c) => c || caches.match('/'))),
+    (async () => {
+      // Apagar TODOS os caches antigos do SW (PWA legacy)
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+      await self.clients.claim();
+    })(),
   );
 });
 
-// Listener pra push notifications
+// IMPORTANTE: não interceptamos fetch — deixamos o navegador lidar com HTTP cache.
+// Vite gera hashes nos assets, então cache-busting é automático.
+
+// Push notifications (mantidas)
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   let data;
@@ -99,3 +54,9 @@ self.addEventListener('notificationclick', (event) => {
     }),
   );
 });
+
+self.addEventListener('message', (event) => {
+  if (event.data === 'SKIP_WAITING') self.skipWaiting();
+});
+
+void CACHE_VERSION;
