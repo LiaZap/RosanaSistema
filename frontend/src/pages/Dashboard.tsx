@@ -64,6 +64,11 @@ function fmtDuration(ms: number): string {
   return `${Math.round(ms / 60_000)}min`;
 }
 
+// Formato YYYY-MM-DD pra inputs
+function toInputDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [me, setMe] = useState<MeResponse | null>(null);
@@ -71,6 +76,27 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState<DashboardKpis | null>(null);
   const [cronJobs, setCronJobs] = useState<CronJob[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Exportar PDF
+  const [showExport, setShowExport] = useState(false);
+  const [exportFrom, setExportFrom] = useState(() =>
+    toInputDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+  );
+  const [exportTo, setExportTo] = useState(() => toInputDate(new Date()));
+  const [exporting, setExporting] = useState(false);
+
+  function handleExport() {
+    const acc = me?.accounts[0];
+    if (!acc) return;
+    setExporting(true);
+    const url = `${import.meta.env.VITE_API_URL ?? '/api'}/crm/report/html?accountId=${acc.accountId}&dateFrom=${exportFrom}&dateTo=${exportTo}`;
+    const win = window.open(url, '_blank');
+    if (!win) {
+      alert('Popup bloqueado. Permita popups para este site e tente novamente.');
+    }
+    setExporting(false);
+    setShowExport(false);
+  }
 
   useEffect(() => {
     async function load() {
@@ -117,7 +143,85 @@ export default function DashboardPage() {
         day: 'numeric',
         month: 'long',
       })}
+      actions={
+        <button
+          onClick={() => setShowExport(true)}
+          className="btn btn-secondary btn-sm flex items-center gap-2"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Exportar PDF
+        </button>
+      }
     >
+      {/* Modal de exportação */}
+      {showExport && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'oklch(0 0 0 / 0.45)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowExport(false); }}
+        >
+          <div className="material w-full max-w-sm mx-4 p-6 space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold" style={{ color: 'var(--text-1)' }}>
+                Exportar relatório
+              </h2>
+              <button
+                onClick={() => setShowExport(false)}
+                className="btn-ghost btn-sm rounded-md px-2 py-1 text-lg leading-none"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="field-label">Data inicial</label>
+                <input
+                  type="date"
+                  value={exportFrom}
+                  onChange={(e) => setExportFrom(e.target.value)}
+                  className="input-base"
+                  style={{ colorScheme: 'dark' }}
+                />
+              </div>
+              <div>
+                <label className="field-label">Data final</label>
+                <input
+                  type="date"
+                  value={exportTo}
+                  onChange={(e) => setExportTo(e.target.value)}
+                  className="input-base"
+                  style={{ colorScheme: 'dark' }}
+                />
+              </div>
+            </div>
+
+            <p className="text-xs" style={{ color: 'var(--text-3)' }}>
+              O relatório abrirá em nova aba e o diálogo de impressão/PDF será aberto automaticamente.
+            </p>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowExport(false)}
+                className="btn btn-secondary btn-sm"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleExport}
+                disabled={exporting || !exportFrom || !exportTo}
+                className="btn btn-primary btn-sm"
+              >
+                {exporting ? 'Abrindo…' : 'Gerar PDF'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {loading ? (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map((i) => (

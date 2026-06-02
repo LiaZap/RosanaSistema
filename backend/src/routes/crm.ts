@@ -10,6 +10,7 @@ import {
 } from '../lib/errors.js';
 import { db } from '../db/client.js';
 import {
+  accounts,
   accountMembers,
   appointments,
   contacts,
@@ -587,6 +588,195 @@ crm.get('/dashboard', requireAuth, async (c) => {
       valorGanho: ganhos.value,
     },
   });
+});
+
+// ── GET /crm/report/html ─────────────────────────────
+// Gera relatorio HTML formatado para impressao/PDF via window.print().
+// Parametros: accountId, dateFrom (YYYY-MM-DD), dateTo (YYYY-MM-DD)
+// Retorna text/html puro (sem JSON) — frontend abre em nova aba e dispara print.
+crm.get('/report/html', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  const dateFrom = c.req.query('dateFrom');
+  const dateTo   = c.req.query('dateTo');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const from = dateFrom ? new Date(`${dateFrom}T00:00:00`) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const to   = dateTo   ? new Date(`${dateTo}T23:59:59`)   : new Date();
+
+  const fmtDate = (d: Date) =>
+    d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const fmtNum = (n: number) => n.toLocaleString('pt-BR');
+  const fmtBRL = (n: number) =>
+    n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+  // ── Queries ───────────────────────────────────────
+  const [account] = await db.select({ name: accounts.name }).from(accounts).where(eq(accounts.id, accountId)).limit(1);
+
+  const [msgCount, convStats, newContacts, dealsStats, topProds, convList] = await Promise.all([
+    db.select({ count: sql<number>`cast(count(*) as int)` })
+      .from(messages)
+      .where(and(eq(messages.accountId, accountId), sql`${messages.createdAt} >= ${from}`, sql`${messages.createdAt} <= ${to}`))
+      .then(r => r[0]?.count ?? 0),
+
+    db.select({ status: conversations.status, count: sql<number>`cast(count(*) as int)` })
+      .from(conversations)
+      .where(and(eq(conversations.accountId, accountId), sql`${conversations.createdAt} >= ${from}`, sql`${conversations.createdAt} <= ${to}`))
+      .groupBy(conversations.status),
+
+    db.select({ count: sql<number>`cast(count(*) as int)` })
+      .from(contacts)
+      .where(and(eq(contacts.accountId, accountId), sql`${contacts.createdAt} >= ${from}`, sql`${contacts.createdAt} <= ${to}`))
+      .then(r => r[0]?.count ?? 0),
+
+    db.execute(sql`
+      SELECT COUNT(*)::int AS n, COALESCE(SUM(value),0) AS val,
+             COUNT(*) FILTER (WHERE LOWER(s.name) LIKE '%ganho%')::int AS won
+      FROM deals d JOIN pipeline_stages s ON s.id = d.stage_id
+      WHERE d.account_id = ${accountId} AND d.created_at >= ${from} AND d.created_at <= ${to}
+    `).then(r => {
+      const row = (r as unknown as { rows: Array<{ n: number; val: string; won: number }> }).rows[0];
+      return { total: row?.n ?? 0, value: Number(row?.val ?? 0), won: row?.won ?? 0 };
+    }),
+
+    db.execute(sql`
+      SELECT nome, estoque FROM produtos_catalogo
+      WHERE account_id = ${accountId} AND estoque > 0
+      ORDER BY estoque DESC LIMIT 8
+    `).then(r => (r as unknown as { rows: Array<{ nome: string; estoque: number }> }).rows),
+
+    db.select({
+        status: conversations.status,
+        contactName: contacts.name,
+        phone: contacts.phoneNumber,
+        lastMsgAt: conversations.lastMessageAt,
+        leadScore: conversations.leadScore,
+      })
+      .from(conversations)
+      .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+      .where(and(eq(conversations.accountId, accountId), sql`${conversations.createdAt} >= ${from}`, sql`${conversations.createdAt} <= ${to}`))
+      .orderBy(desc(conversations.lastMessageAt))
+      .limit(30),
+  ]);
+
+  const convByStatus: Record<string, number> = {};
+  for (const row of convStats) convByStatus[row.status] = row.count;
+  const totalConvs = Object.values(convByStatus).reduce((a,b) => a+b, 0);
+  const ninavPct = totalConvs > 0 ? Math.round(((convByStatus['nina'] ?? 0) / totalConvs) * 100) : 0;
+
+  const statusLabel: Record<string, string> = { nina: 'Dani', human: 'Humano', paused: 'Pausada', closed: 'Fechada' };
+
+  // ── HTML ──────────────────────────────────────────
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Relatorio FCE — ${fmtDate(from)} a ${fmtDate(to)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#1a1a1a;background:#fff;padding:28px 36px}
+  h1{font-size:22px;font-weight:700;color:#222;margin-bottom:4px}
+  .subtitle{color:#666;font-size:13px;margin-bottom:28px}
+  .badge{display:inline-block;background:#e50789;color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:20px}
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:28px}
+  .kpi{border:1px solid #e4e4e4;border-radius:10px;padding:14px 16px;background:#fafafa}
+  .kpi .val{font-size:26px;font-weight:700;color:#111;line-height:1}
+  .kpi .lbl{font-size:11px;color:#777;margin-top:4px;text-transform:uppercase;letter-spacing:.04em}
+  section{margin-bottom:28px}
+  section h2{font-size:14px;font-weight:700;color:#333;border-bottom:2px solid #f0f0f0;padding-bottom:6px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th{text-align:left;padding:7px 10px;background:#f4f4f4;color:#555;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #e0e0e0}
+  td{padding:7px 10px;border-bottom:1px solid #f2f2f2;color:#333}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:600}
+  .tag-nina{background:#ede9fe;color:#6d28d9}
+  .tag-human{background:#dcfce7;color:#166534}
+  .tag-paused{background:#fef9c3;color:#854d0e}
+  .tag-closed{background:#f3f4f6;color:#6b7280}
+  .prog-bar{height:8px;border-radius:4px;background:#f0f0f0;overflow:hidden;width:120px;display:inline-block;vertical-align:middle}
+  .prog-fill{height:100%;background:#e50789;border-radius:4px}
+  footer{margin-top:36px;border-top:1px solid #e8e8e8;padding-top:12px;font-size:11px;color:#aaa;display:flex;justify-content:space-between}
+  @media print{body{padding:18px 24px}footer{position:fixed;bottom:0;left:0;right:0;padding:8px 24px;background:#fff}}
+</style>
+</head>
+<body>
+<span class="badge">FCE Studio — Relatório Automático</span>
+<h1>${account?.name ?? 'Filhos com Estilo'}</h1>
+<p class="subtitle">Período: <strong>${fmtDate(from)}</strong> a <strong>${fmtDate(to)}</strong> · Gerado em ${fmtDate(new Date())}</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="val">${fmtNum(msgCount)}</div><div class="lbl">Mensagens</div></div>
+  <div class="kpi"><div class="val">${fmtNum(totalConvs)}</div><div class="lbl">Conversas</div></div>
+  <div class="kpi"><div class="val">${fmtNum(newContacts)}</div><div class="lbl">Novos contatos</div></div>
+  <div class="kpi"><div class="val">${ninavPct}%</div><div class="lbl">Autonomia DANI</div></div>
+</div>
+
+<section>
+  <h2>Pipeline do período</h2>
+  <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+    <div class="kpi"><div class="val">${fmtNum(dealsStats.total)}</div><div class="lbl">Leads criados</div></div>
+    <div class="kpi"><div class="val">${fmtNum(dealsStats.won)}</div><div class="lbl">Negócios ganhos</div></div>
+    <div class="kpi"><div class="val">${fmtBRL(dealsStats.value)}</div><div class="lbl">Valor total pipeline</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>Status das conversas</h2>
+  <table>
+    <tr><th>Status</th><th>Qtd.</th><th>Participação</th></tr>
+    ${Object.entries(convByStatus).map(([s, n]) => `
+    <tr>
+      <td><span class="tag tag-${s}">${statusLabel[s] ?? s}</span></td>
+      <td>${fmtNum(n)}</td>
+      <td>
+        <div class="prog-bar"><div class="prog-fill" style="width:${totalConvs > 0 ? Math.round((n/totalConvs)*100) : 0}%"></div></div>
+        &nbsp;${totalConvs > 0 ? Math.round((n/totalConvs)*100) : 0}%
+      </td>
+    </tr>`).join('')}
+  </table>
+</section>
+
+${topProds.length > 0 ? `
+<section>
+  <h2>Top produtos em estoque</h2>
+  <table>
+    <tr><th>Produto</th><th>Estoque</th></tr>
+    ${topProds.map(p => `<tr><td>${p.nome}</td><td>${fmtNum(p.estoque)}</td></tr>`).join('')}
+  </table>
+</section>` : ''}
+
+<section>
+  <h2>Últimas conversas (até 30)</h2>
+  <table>
+    <tr><th>Contato</th><th>Telefone</th><th>Status</th><th>Lead Score</th><th>Última msg</th></tr>
+    ${convList.map(c => `
+    <tr>
+      <td>${c.contactName ?? '—'}</td>
+      <td>${c.phone}</td>
+      <td><span class="tag tag-${c.status}">${statusLabel[c.status] ?? c.status}</span></td>
+      <td>${c.leadScore ?? 0}</td>
+      <td>${c.lastMsgAt ? new Date(c.lastMsgAt).toLocaleDateString('pt-BR') : '—'}</td>
+    </tr>`).join('')}
+  </table>
+</section>
+
+<footer>
+  <span>FCE Studio — Sistema de Atendimento DANI</span>
+  <span>Relatório gerado automaticamente · ${fmtDate(new Date())}</span>
+</footer>
+
+<script>
+  // Auto-abre dialogo de impressao quando carregado em nova aba
+  window.addEventListener('load', () => {
+    setTimeout(() => window.print(), 400);
+  });
+</script>
+</body>
+</html>`;
+
+  return c.html(html);
 });
 
 export default crm;
