@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import { Avatar } from '../components/ui/avatar';
+import { DaniAvatar } from '../components/ui/DaniAvatar';
 import EmptyState from '../components/ui/EmptyState';
 
 interface MeResponse {
@@ -28,6 +29,8 @@ interface Deal {
   contactId: string;
   contactName: string | null;
   contactPhone: string;
+  createdByAi: boolean;
+  conversationId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -480,17 +483,36 @@ function DealCard({
           <h4 className="font-semibold text-foreground text-xs flex-1 leading-snug line-clamp-2">
             {deal.title}
           </h4>
-          <button
-            onClick={onDelete}
-            className="text-muted-foreground/60 hover:text-destructive text-[10px]
-                       opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-            title="Apagar"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {deal.createdByAi && (
+              <span
+                className="text-[8px] uppercase font-mono font-bold px-1.5 py-0.5 rounded-full"
+                style={{
+                  background: 'var(--dani-bg)',
+                  color: 'var(--dani-text)',
+                  letterSpacing: '0.06em',
+                }}
+                title="Criado automaticamente pela DANI"
+              >
+                ✦ DANI
+              </span>
+            )}
+            <button
+              onClick={onDelete}
+              className="text-muted-foreground/60 hover:text-destructive text-[10px]
+                         opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Apagar"
+            >
+              ✕
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-1.5">
-          <Avatar fallback={deal.contactName ?? deal.contactPhone.slice(-2)} size="sm" />
+          {deal.createdByAi ? (
+            <DaniAvatar size="sm" />
+          ) : (
+            <Avatar fallback={deal.contactName ?? deal.contactPhone.slice(-2)} size="sm" />
+          )}
           <span className="text-[10px] text-muted-foreground truncate flex-1">
             {deal.contactName ?? `+${deal.contactPhone}`}
           </span>

@@ -229,6 +229,11 @@ export const deals = pgTable('deals', {
   value: decimal('value', { precision: 12, scale: 2 }),
   expectedCloseDate: timestamp('expected_close_date', { withTimezone: true }),
   notes: text('notes'),
+  // Marcador: deal criado automaticamente pela DANI
+  createdByAi: boolean('created_by_ai').default(false).notNull(),
+  conversationId: uuid('conversation_id').references(() => conversations.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({

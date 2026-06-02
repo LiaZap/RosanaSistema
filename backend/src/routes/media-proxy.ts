@@ -393,6 +393,22 @@ media.get('/conv-status', async (c) => {
   }
 });
 
+// ── POST /media/apply-migration-0011 ─────────────────
+media.post('/apply-migration-0011', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    await db.execute(
+      sql`ALTER TABLE deals ADD COLUMN IF NOT EXISTS created_by_ai boolean NOT NULL DEFAULT false`,
+    );
+    await db.execute(
+      sql`ALTER TABLE deals ADD COLUMN IF NOT EXISTS conversation_id uuid REFERENCES conversations(id) ON DELETE SET NULL`,
+    );
+    return c.json({ ok: true, applied: ['deals.created_by_ai', 'deals.conversation_id'] });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0010 ─────────────────
 media.post('/apply-migration-0010', async (c) => {
   try {

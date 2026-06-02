@@ -2,6 +2,7 @@ import { Worker } from 'bullmq';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
+  contacts,
   conversations,
   messages,
   ninaSettings,
@@ -469,6 +470,37 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
       '[AiReply] background memory update failed',
     ),
   );
+
+  // 14. Auto-create deal: se cliente expressou intencao de compra,
+  // cria deal automaticamente em "Em Qualificacao"
+  (async () => {
+    try {
+      const { createDealIfBuyIntent } = await import('./auto-deal.js');
+      const contactRow = await db.query.contacts.findFirst({
+        where: eq(contacts.id, contactId),
+        columns: { name: true },
+      });
+      const r = await createDealIfBuyIntent({
+        accountId,
+        conversationId,
+        contactId,
+        contactName: contactRow?.name ?? null,
+        userMessage: combinedText,
+        daniReply: result.reply,
+      });
+      if (r.created) {
+        logger.info(
+          { conversationId, dealId: r.dealId },
+          '[AiReply] deal auto-criado pela DANI',
+        );
+      }
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message, conversationId },
+        '[AiReply] auto-deal failed',
+      );
+    }
+  })();
 }
 
 /**

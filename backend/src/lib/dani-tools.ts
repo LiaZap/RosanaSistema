@@ -2,6 +2,7 @@ import {
   SchemaType,
   type FunctionDeclaration,
 } from '@google/generative-ai';
+import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { appointments } from '../db/schema.js';
 import { buscarProdutos, buscarProdutoDetalhe } from './dani-products.js';
@@ -252,6 +253,39 @@ export const TOOL_HANDLERS: Record<
         { accountId: ctx.accountId, apptId: created.id, dt },
         '[DANI Tool] appointment created',
       );
+
+      // Tenta sync com Google Calendar (se conectado, async fire-and-forget)
+      (async () => {
+        try {
+          const { createEvent } = await import('./google-calendar.js');
+          const endDt = new Date(dt.getTime() + duracaoMin * 60_000);
+          const tz = 'America/Sao_Paulo';
+          const gEvent = await createEvent({
+            accountId: ctx.accountId,
+            event: {
+              summary: titulo,
+              description: observacoes ?? `Tipo: ${tipo}\nCriado pela DANI`,
+              start: { dateTime: dt.toISOString(), timeZone: tz },
+              end: { dateTime: endDt.toISOString(), timeZone: tz },
+            },
+          });
+          if (gEvent?.id) {
+            await db
+              .update(appointments)
+              .set({ googleEventId: gEvent.id })
+              .where(eq(appointments.id, created.id));
+            logger.info(
+              { apptId: created.id, gEventId: gEvent.id },
+              '[DANI Tool] appointment synced to Google Calendar',
+            );
+          }
+        } catch (err) {
+          logger.debug(
+            { err: (err as Error).message },
+            '[DANI Tool] GCal sync skipped (not connected or error)',
+          );
+        }
+      })();
 
       return {
         status: 'AGENDADO',

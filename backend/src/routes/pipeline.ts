@@ -123,6 +123,8 @@ pipeline.get('/deals', requireAuth, async (c) => {
       contactId: deals.contactId,
       contactName: contacts.name,
       contactPhone: contacts.phoneNumber,
+      createdByAi: deals.createdByAi,
+      conversationId: deals.conversationId,
       createdAt: deals.createdAt,
       updatedAt: deals.updatedAt,
     })
