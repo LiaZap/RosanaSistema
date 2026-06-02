@@ -206,10 +206,13 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
           ))}
         </nav>
 
-        {/* User mini-card */}
+        {/* User mini-card (clica pra perfil) */}
         {me && (
           <div className="border-t border-border p-2">
-            <div className="flex items-center gap-2.5 p-2 rounded-md hover:bg-muted group transition-colors">
+            <Link
+              to="/perfil"
+              className="flex items-center gap-2.5 p-2 rounded-md hover:bg-muted group transition-colors no-underline"
+            >
               <div className="w-7 h-7 rounded-full bg-secondary border border-border flex items-center justify-center text-foreground text-[11px] font-semibold shrink-0">
                 {(me.profile?.fullName?.[0] ?? me.user.email[0]).toUpperCase()}
               </div>
@@ -218,17 +221,21 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
                   {me.profile?.fullName ?? me.user.email.split('@')[0]}
                 </div>
                 <div className="text-[10px] text-muted-foreground truncate">
-                  {account?.role ?? 'sem conta'}
+                  {account?.role ?? 'sem conta'} · workspace
                 </div>
               </div>
               <button
-                onClick={handleLogout}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleLogout();
+                }}
                 title="Sair"
                 className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
               >
                 {I.logout}
               </button>
-            </div>
+            </Link>
           </div>
         )}
       </aside>

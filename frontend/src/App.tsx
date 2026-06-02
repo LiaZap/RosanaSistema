@@ -13,6 +13,7 @@ import AgentSettingsPage from './pages/AgentSettings';
 import KnowledgePage from './pages/Knowledge';
 import LibraryPage from './pages/Library';
 import OnboardingPage from './pages/Onboarding';
+import PerfilPage from './pages/Perfil';
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="/cloudinary" element={<CloudinaryPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
         <Route path="/appointments" element={<AppointmentsPage />} />
+        <Route path="/perfil" element={<PerfilPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

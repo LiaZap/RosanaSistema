@@ -208,17 +208,11 @@ export default function KnowledgePage() {
       actions={
         <div className="flex gap-2">
           {items.length === 0 && !seedingDone && (
-            <button
-              onClick={handleSeed}
-              className="px-4 py-2 rounded-lg border border-fce-green/40 bg-fce-green/10 text-fce-green text-sm font-semibold"
-            >
-              Importar conhecimento padrao
+            <button onClick={handleSeed} className="btn btn-secondary btn-sm">
+              Importar padrão
             </button>
           )}
-          <button
-            onClick={openCreate}
-            className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold"
-          >
+          <button onClick={openCreate} className="btn btn-primary btn-sm">
             + Novo chunk
           </button>
         </div>
@@ -226,60 +220,94 @@ export default function KnowledgePage() {
     >
       <div className="space-y-5">
         {notice && (
-          <div className="rounded-lg border border-fce-green/40 bg-fce-green/10 p-3 text-sm text-fce-green">
+          <div
+            className="rounded-md p-3 text-sm"
+            style={{
+              background: 'var(--success-bg)',
+              color: 'var(--success)',
+              border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
+            }}
+          >
             {notice}
           </div>
         )}
         {error && (
-          <div className="rounded-lg border border-fce-red/40 bg-fce-red/10 p-3 text-sm text-fce-red">
+          <div
+            className="rounded-md p-3 text-sm"
+            style={{
+              background: 'var(--danger-bg)',
+              color: 'var(--danger)',
+              border: '1px solid color-mix(in oklch, var(--danger) 25%, transparent)',
+            }}
+          >
             {error}
           </div>
         )}
 
         {/* Empty state */}
         {!loading && items.length === 0 && (
-          <div className="bg-card/40 border border-border/60 rounded-xl p-8 text-center">
-            <p className="text-foreground font-semibold mb-2">Base de conhecimento vazia</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              A DANI usa esses chunks como RAG: carregamos so os relevantes pra cada turno.
-              <br />
-              Importe o conhecimento padrao da Filhos com Estilo pra comecar.
+          <div className="material p-8 text-center">
+            <p className="font-semibold mb-2" style={{ color: 'var(--text-1)' }}>
+              Base de conhecimento vazia
             </p>
-            <button
-              onClick={handleSeed}
-              className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold"
-            >
-              Importar conhecimento padrao FCE
+            <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+              A DANI usa esses chunks como RAG: carregamos só os relevantes pra cada turno.
+              <br />
+              Importe o conhecimento padrão da Filhos com Estilo pra começar.
+            </p>
+            <button onClick={handleSeed} className="btn btn-primary btn-md">
+              Importar conhecimento padrão FCE
             </button>
           </div>
         )}
 
-        {/* Category filter */}
+        {/* Category filter (FilterTabs) */}
         {items.length > 0 && (
           <div className="flex gap-1.5 flex-wrap">
             <button
               onClick={() => setSelectedCategory('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+              style={
                 selectedCategory === 'all'
-                  ? 'bg-fce-pink/15 text-fce-pink'
-                  : 'bg-card/40 border border-border/60 text-muted-foreground hover:bg-card'
-              }`}
+                  ? {
+                      background: 'var(--primary-tint)',
+                      color: 'var(--primary-text)',
+                      border: '1px solid color-mix(in oklch, var(--primary) 25%, transparent)',
+                    }
+                  : {
+                      background: 'var(--bg-surface)',
+                      color: 'var(--text-2)',
+                      border: '1px solid var(--border)',
+                    }
+              }
             >
-              Todos ({items.length})
+              Todos <span className="font-mono opacity-70">({items.length})</span>
             </button>
-            {CATEGORIES.filter((c) => (countByCategory.get(c.value) ?? 0) > 0).map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setSelectedCategory(c.value)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  selectedCategory === c.value
-                    ? 'bg-fce-pink/15 text-fce-pink'
-                    : 'bg-card/40 border border-border/60 text-muted-foreground hover:bg-card'
-                }`}
-              >
-                {c.label} ({countByCategory.get(c.value) ?? 0})
-              </button>
-            ))}
+            {CATEGORIES.filter((c) => (countByCategory.get(c.value) ?? 0) > 0).map((c) => {
+              const isActive = selectedCategory === c.value;
+              return (
+                <button
+                  key={c.value}
+                  onClick={() => setSelectedCategory(c.value)}
+                  className="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
+                  style={
+                    isActive
+                      ? {
+                          background: 'var(--primary-tint)',
+                          color: 'var(--primary-text)',
+                          border: '1px solid color-mix(in oklch, var(--primary) 25%, transparent)',
+                        }
+                      : {
+                          background: 'var(--bg-surface)',
+                          color: 'var(--text-2)',
+                          border: '1px solid var(--border)',
+                        }
+                  }
+                >
+                  {c.label} <span className="font-mono opacity-70">({countByCategory.get(c.value) ?? 0})</span>
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -287,30 +315,29 @@ export default function KnowledgePage() {
         <div className="space-y-2">
           {loading && <p className="text-center text-muted-foreground text-sm py-8">Carregando...</p>}
           {filtered.map((item) => (
-            <div
-              key={item.id}
-              className="bg-card/40 border border-border/60 rounded-xl p-4 hover:border-border transition-colors group"
-            >
+            <div key={item.id} className="material lift p-4 group">
               <div className="flex items-start justify-between gap-3 mb-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-fce-pink/10 text-fce-pink font-medium">
-                      {item.category}
-                    </span>
+                  <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                    <span className="badge b-primary uppercase">{item.category}</span>
                     {item.alwaysInclude && (
-                      <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-yellow-500/15 text-yellow-400 font-medium">
-                        sempre
-                      </span>
+                      <span className="badge b-hot uppercase">sempre</span>
                     )}
-                    {!item.isActive && (
-                      <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
-                        inativo
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground">prio {item.priority}</span>
+                    {!item.isActive && <span className="badge b-neutral uppercase">inativo</span>}
+                    <span className="text-[10px] font-mono" style={{ color: 'var(--text-3)' }}>
+                      prio {item.priority}
+                    </span>
                   </div>
-                  <h3 className="font-semibold text-foreground text-sm">{item.title}</h3>
-                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2 whitespace-pre-wrap">
+                  <h3
+                    className="font-semibold text-[14.5px]"
+                    style={{ color: 'var(--text-1)' }}
+                  >
+                    {item.title}
+                  </h3>
+                  <p
+                    className="text-xs mt-1 line-clamp-2 whitespace-pre-wrap"
+                    style={{ color: 'var(--text-2)' }}
+                  >
                     {item.content}
                   </p>
                   {item.tags && item.tags.length > 0 && (
@@ -318,7 +345,12 @@ export default function KnowledgePage() {
                       {item.tags.map((t) => (
                         <span
                           key={t}
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-card border border-border text-muted-foreground font-mono"
+                          className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                          style={{
+                            background: 'var(--bg-subtle)',
+                            border: '1px solid var(--border)',
+                            color: 'var(--text-3)',
+                          }}
                         >
                           {t}
                         </span>

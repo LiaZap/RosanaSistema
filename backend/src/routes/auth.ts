@@ -172,4 +172,31 @@ auth.get('/me', requireAuth, async (c) => {
   });
 });
 
+// ── PUT /auth/profile ────────────────────────────────
+auth.put('/profile', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.json();
+  const fullName = typeof body.fullName === 'string' ? body.fullName.trim().slice(0, 255) : '';
+
+  const [existing] = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(eq(profiles.userId, user.id))
+    .limit(1);
+
+  if (existing) {
+    await db
+      .update(profiles)
+      .set({ fullName: fullName || null, updatedAt: new Date() })
+      .where(eq(profiles.userId, user.id));
+  } else {
+    await db.insert(profiles).values({
+      userId: user.id,
+      fullName: fullName || null,
+    });
+  }
+
+  return c.json({ ok: true });
+});
+
 export default auth;
