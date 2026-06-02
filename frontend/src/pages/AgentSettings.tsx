@@ -4,7 +4,7 @@ import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 
 interface MeResponse {
-  user: { id: string; email: string };
+  user: { id: string; email: string; isSuperAdmin?: boolean };
   accounts: Array<{ accountId: string; role: string; accountName: string }>;
 }
 
@@ -23,12 +23,46 @@ interface NinaSettings {
   audioResponseEnabled: boolean;
 }
 
-const MODEL_LABELS: Record<string, string> = {
-  flash: 'gemini-flash-latest (rapido, barato - recomendado)',
-  pro: 'gemini-pro-latest (mais preciso, mais caro)',
-  lite: 'gemini-flash-lite-latest (mais barato)',
-  preview: 'gemini-2.0-flash (versao fixa estavel)',
-};
+interface ModelOption {
+  key: string;
+  label: string;
+  model: string;
+  badge?: 'recomendado' | 'avancado' | 'experimental';
+  superAdminOnly?: boolean;
+}
+
+// Modelos visiveis ordenados pelo padrao recomendado primeiro.
+// `flash` e a unica opcao livre. Pro/lite/preview ficam restritas ao
+// super-admin (FCE/Paulo) por decisao da reuniao 02/06 — evita que
+// admin do cliente bagunce a operacao trocando modelo no impulso.
+const MODEL_OPTIONS: ModelOption[] = [
+  {
+    key: 'flash',
+    label: 'Flash — gemini-flash-latest (rapido + barato)',
+    model: 'gemini-flash-latest',
+    badge: 'recomendado',
+  },
+  {
+    key: 'pro',
+    label: 'Pro — gemini-pro-latest (mais preciso, mais caro)',
+    model: 'gemini-pro-latest',
+    badge: 'avancado',
+    superAdminOnly: true,
+  },
+  {
+    key: 'lite',
+    label: 'Lite — gemini-flash-lite-latest (econ. de token)',
+    model: 'gemini-flash-lite-latest',
+    superAdminOnly: true,
+  },
+  {
+    key: 'preview',
+    label: 'Preview — gemini-2.0-flash (versao fixa)',
+    model: 'gemini-2.0-flash',
+    badge: 'experimental',
+    superAdminOnly: true,
+  },
+];
 
 export default function AgentSettingsPage() {
   const navigate = useNavigate();
@@ -46,6 +80,8 @@ export default function AgentSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const isSuperAdmin = !!me?.user.isSuperAdmin;
 
   useEffect(() => {
     api
@@ -201,27 +237,86 @@ export default function AgentSettingsPage() {
 
             {/* Modelo */}
             <div className="glass rounded-xl p-5 space-y-3">
-              <h2 className="font-semibold text-foreground">Modelo IA</h2>
-              <div className="space-y-2">
-                {Object.entries(MODEL_LABELS).map(([key, label]) => (
-                  <label
-                    key={key}
-                    className="flex items-center gap-3 p-2 rounded-lg hover:bg-card cursor-pointer"
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-semibold text-foreground">Modelo IA</h2>
+                  <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--text-3)' }}>
+                    Padrao da operacao e o Flash. Trocar afeta diretamente o custo e a precisao.
+                  </p>
+                </div>
+                {!isSuperAdmin && (
+                  <span
+                    className="text-[10.5px] font-semibold px-2 py-0.5 rounded-full inline-flex items-center gap-1 shrink-0"
+                    style={{ background: 'var(--warning-bg)', color: 'var(--warning)' }}
+                    title="Apenas super-admin pode trocar o modelo"
                   >
-                    <input
-                      type="radio"
-                      name="aiModelMode"
-                      value={key}
-                      checked={form.aiModelMode === key}
-                      onChange={(e) => setForm({ ...form, aiModelMode: e.target.value })}
-                      className="w-4 h-4 accent-fce-pink"
-                    />
-                    <div>
-                      <div className="text-sm font-medium text-foreground">{key}</div>
-                      <div className="text-xs text-muted-foreground font-mono">{label}</div>
-                    </div>
-                  </label>
-                ))}
+                    🔒 travado
+                  </span>
+                )}
+              </div>
+              <div className="space-y-2">
+                {MODEL_OPTIONS.map((opt) => {
+                  const locked = !isSuperAdmin && opt.superAdminOnly;
+                  const selected = form.aiModelMode === opt.key;
+                  return (
+                    <label
+                      key={opt.key}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
+                        locked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-card cursor-pointer'
+                      } ${selected ? 'border' : 'border border-transparent'}`}
+                      style={
+                        selected
+                          ? { background: 'var(--primary-tint)', borderColor: 'var(--primary)' }
+                          : undefined
+                      }
+                    >
+                      <input
+                        type="radio"
+                        name="aiModelMode"
+                        value={opt.key}
+                        checked={selected}
+                        disabled={locked}
+                        onChange={(e) => {
+                          if (locked) return;
+                          setForm({ ...form, aiModelMode: e.target.value });
+                        }}
+                        className="w-4 h-4 accent-fce-pink"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-medium text-foreground capitalize">
+                            {opt.key}
+                          </span>
+                          {opt.badge && (
+                            <span
+                              className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full uppercase tracking-wide"
+                              style={
+                                opt.badge === 'recomendado'
+                                  ? { background: 'var(--success-bg)', color: 'var(--success)' }
+                                  : opt.badge === 'avancado'
+                                  ? { background: 'var(--info-bg)', color: 'var(--info)' }
+                                  : { background: 'var(--warning-bg)', color: 'var(--warning)' }
+                              }
+                            >
+                              {opt.badge}
+                            </span>
+                          )}
+                          {locked && (
+                            <span
+                              className="text-[10px] font-semibold"
+                              style={{ color: 'var(--text-3)' }}
+                            >
+                              🔒 super-admin
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--text-3)' }}>
+                          {opt.label}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 

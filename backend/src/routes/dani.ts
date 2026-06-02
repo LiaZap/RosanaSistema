@@ -271,6 +271,17 @@ dani.put('/settings', requireAuth, async (c) => {
   const { accountId, ...updates } = parsed.data;
   await assertAccountMember(user.id, accountId);
 
+  // Reuniao 02/06: troca de modelo IA so super-admin pode.
+  // Admin de cliente pode editar prompt/nome/etc mas NAO trocar o modelo
+  // (evita brincar com pro/lite e bagunçar a operacao).
+  if (updates.aiModelMode !== undefined && !user.isSuperAdmin) {
+    logger.warn(
+      { userId: user.id, accountId, attemptedModel: updates.aiModelMode },
+      '[DANI] non-superadmin tentou trocar aiModelMode - removendo do payload',
+    );
+    delete (updates as { aiModelMode?: string }).aiModelMode;
+  }
+
   const existing = await db.query.ninaSettings.findFirst({
     where: eq(ninaSettings.accountId, accountId),
   });
