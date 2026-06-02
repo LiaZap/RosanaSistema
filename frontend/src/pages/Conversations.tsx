@@ -261,57 +261,61 @@ export default function ConversationsPage() {
           </div>
         )}
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {filtered.map((conv) => {
             const heat = leadHeat(conv.leadScore);
             const isDani = conv.status === 'nina';
             const isHuman = conv.status === 'human';
             const lastFromAgent = conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human';
 
+            // Cor da borda lateral esquerda por status
+            const accentColor = isDani
+              ? 'var(--dani)'
+              : isHuman
+              ? 'var(--success)'
+              : conv.status === 'paused'
+              ? 'var(--warning)'
+              : 'var(--border)';
+
             return (
               <Link
                 key={conv.id}
                 to={`/conversations/${conv.id}`}
-                className="material lift block px-4 py-3 group"
-                style={{ textDecoration: 'none' }}
+                className="group flex items-stretch rounded-xl overflow-hidden transition-all hover:shadow-md"
+                style={{
+                  textDecoration: 'none',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--sh-sm)',
+                }}
               >
-                <div className="flex items-start gap-3">
+                {/* Accent bar lateral */}
+                <div
+                  className="w-[3px] shrink-0 transition-all group-hover:w-[4px]"
+                  style={{ background: accentColor }}
+                />
+
+                <div className="flex items-start gap-3 flex-1 px-4 py-3 min-w-0">
                   {/* Avatar com status dot */}
-                  <div className="relative shrink-0">
+                  <div className="relative shrink-0 mt-0.5">
                     <Avatar
                       fallback={conv.contactName ?? `+${conv.contactPhone}`}
                       size="md"
                     />
-                    {/* Status dot */}
                     <span
-                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
+                      className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
                       style={{
-                        background: isDani
-                          ? 'var(--dani)'
-                          : isHuman
-                          ? 'var(--success)'
-                          : conv.status === 'paused'
-                          ? 'var(--warning)'
-                          : 'var(--text-3)',
+                        background: accentColor,
                         borderColor: 'var(--bg-surface)',
                       }}
-                      title={
-                        isDani
-                          ? 'Dani ativa'
-                          : isHuman
-                          ? 'Humano respondendo'
-                          : conv.status === 'paused'
-                          ? 'Pausada'
-                          : 'Fechada'
-                      }
                     />
                   </div>
 
                   {/* Conteudo */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
+                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
                       <span
-                        className="text-[14px] font-semibold truncate"
+                        className="text-[13.5px] font-semibold truncate"
                         style={{ color: 'var(--text-1)' }}
                       >
                         {conv.contactName ?? `+${conv.contactPhone}`}
@@ -319,7 +323,7 @@ export default function ConversationsPage() {
 
                       {isDani && (
                         <span
-                          className="inline-flex items-center gap-0.5 text-[10.5px] font-semibold shrink-0 px-1.5 py-0.5 rounded-full"
+                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold shrink-0 px-1.5 py-0.5 rounded-full"
                           style={{
                             background: 'var(--dani-bg)',
                             color: 'var(--dani-text)',
@@ -331,7 +335,7 @@ export default function ConversationsPage() {
 
                       {heat && (
                         <span
-                          className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
                           style={{
                             background: 'transparent',
                             color: heat.color,
@@ -344,10 +348,10 @@ export default function ConversationsPage() {
 
                       {conv.intentLabel && conv.intentLabel !== 'curioso' && (
                         <span
-                          className="text-[10.5px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
                           style={{
-                            background: 'var(--bg-subtle)',
-                            color: 'var(--text-2)',
+                            background: 'var(--bg-sunken)',
+                            color: 'var(--text-3)',
                           }}
                         >
                           {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
@@ -356,7 +360,7 @@ export default function ConversationsPage() {
 
                       {conv.followupState === 'sent' && (
                         <span
-                          className="text-[10.5px] font-medium px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1"
+                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
                           style={{
                             background: 'var(--dani-bg)',
                             color: 'var(--dani-text)',
@@ -367,35 +371,39 @@ export default function ConversationsPage() {
                       )}
                     </div>
 
+                    {/* Preview da última mensagem */}
                     <p
-                      className="text-[12.5px] truncate"
+                      className="text-[12px] truncate leading-snug"
                       style={{ color: 'var(--text-2)' }}
                     >
                       {lastFromAgent && (
-                        <span style={{ color: 'var(--text-3)' }}>
-                          {conv.lastMessageFrom === 'nina' ? '✦ ' : '↳ '}
+                        <span style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
+                          {conv.lastMessageFrom === 'nina' ? 'Dani: ' : 'Bia: '}
                         </span>
                       )}
-                      {conv.lastMessage ?? <span style={{ color: 'var(--text-3)' }}>(sem mensagens)</span>}
+                      {conv.lastMessage
+                        ? conv.lastMessage
+                        : <span style={{ color: 'var(--text-3)' }}>sem mensagens</span>}
                     </p>
                   </div>
 
-                  {/* Timestamp + phone */}
-                  <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                  {/* Timestamp */}
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1 ml-2">
                     <span
-                      className="text-[11px] tabular-nums"
+                      className="text-[11px] tabular-nums whitespace-nowrap"
                       style={{ color: 'var(--text-3)' }}
                     >
                       {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
                     </span>
-                    {!conv.contactName && (
-                      <span
-                        className="text-[10.5px] tabular-nums font-mono"
-                        style={{ color: 'var(--text-3)' }}
-                      >
-                        +{conv.contactPhone.slice(-4)}
-                      </span>
-                    )}
+                    {/* Indicador de quem está ativo */}
+                    <span
+                      className="text-[10px] font-medium"
+                      style={{
+                        color: isDani ? 'var(--dani)' : isHuman ? 'var(--success)' : 'var(--text-3)',
+                      }}
+                    >
+                      {isDani ? '✦ Dani' : isHuman ? '● Humano' : conv.status === 'paused' ? '⏸' : '✓'}
+                    </span>
                   </div>
                 </div>
               </Link>
