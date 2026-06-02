@@ -36,13 +36,6 @@ const INTENT_LABELS: Record<string, string> = {
   despedida: 'despedida',
 };
 
-function leadBadge(score: number): { label: string; cls: string } | null {
-  if (score >= 70) return { label: '🔥 quente', cls: 'bg-fce-red/15 text-fce-red border-fce-red/30' };
-  if (score >= 30) return { label: '🌡 morno', cls: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30' };
-  if (score > 0) return { label: '❄ frio', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' };
-  return null;
-}
-
 interface Stats {
   nina: number;
   human: number;
@@ -51,19 +44,17 @@ interface Stats {
   total: number;
 }
 
-const STATUS_LABELS: Record<ConversationRow['status'], string> = {
-  nina: 'DANI',
-  human: 'Humano',
-  paused: 'Pausado',
-  closed: 'Fechado',
-};
-
-const STATUS_COLORS: Record<ConversationRow['status'], string> = {
-  nina: 'badge-brand',
-  human: 'badge-success',
-  paused: 'badge-warning',
-  closed: 'badge-neutral',
-};
+const FILTERS: Array<{
+  key: 'all' | 'nina' | 'human' | 'paused' | 'closed';
+  label: string;
+  dot: string | null;
+}> = [
+  { key: 'all', label: 'Todas', dot: null },
+  { key: 'nina', label: 'Dani', dot: 'var(--dani)' },
+  { key: 'human', label: 'Humano', dot: 'var(--success)' },
+  { key: 'paused', label: 'Pausadas', dot: 'var(--warning)' },
+  { key: 'closed', label: 'Fechadas', dot: 'var(--text-3)' },
+];
 
 function timeAgo(date: string | null): string {
   if (!date) return '—';
@@ -75,6 +66,13 @@ function timeAgo(date: string | null): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
+}
+
+function leadHeat(score: number): { label: string; color: string } | null {
+  if (score >= 70) return { label: 'quente', color: 'var(--danger)' };
+  if (score >= 30) return { label: 'morno', color: 'var(--warning)' };
+  if (score > 0) return { label: 'frio', color: 'var(--info)' };
+  return null;
 }
 
 export default function ConversationsPage() {
@@ -140,117 +138,242 @@ export default function ConversationsPage() {
     );
   }, [conversations, search]);
 
+  const countFor = (k: typeof FILTERS[number]['key']) => {
+    if (!stats) return 0;
+    return k === 'all' ? stats.total : stats[k];
+  };
+
   return (
     <AppShell
       title="Conversas"
-      subtitle={`${conversations.length} conversas · auto-refresh 15s`}
+      subtitle={`${conversations.length} conversa${conversations.length === 1 ? '' : 's'} · atualiza a cada 15s`}
+      bare
     >
-      <div className="space-y-5">
-        {/* Stats */}
-        {stats && (
-          <div className="grid grid-cols-5 gap-2">
-            {(['all', 'nina', 'human', 'paused', 'closed'] as const).map((key) => {
-              const count = key === 'all' ? stats.total : stats[key];
-              const labels: Record<typeof key, string> = {
-                all: 'Total',
-                nina: 'DANI',
-                human: 'Humano',
-                paused: 'Pausado',
-                closed: 'Fechado',
-              };
-              const colors: Record<typeof key, string> = {
-                all: 'text-foreground',
-                nina: 'text-primary',
-                human: 'text-fce-green',
-                paused: 'text-yellow-400',
-                closed: 'text-muted-foreground',
-              };
+      {/* Toolbar — filtros chip + search */}
+      <div
+        className="border-b sticky top-0 z-10"
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-app)' }}
+      >
+        <div className="px-5 py-3 flex flex-wrap items-center gap-3">
+          {/* Filtros chip */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {FILTERS.map((f) => {
+              const active = filter === f.key;
               return (
                 <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className={`card-base p-3 text-left transition-colors ${
-                    filter === key
-                      ? 'border-primary/50 bg-primary/5'
-                      : 'hover:border-border'
-                  }`}
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className="text-[12.5px] font-medium px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5"
+                  style={{
+                    background: active ? 'var(--primary-tint)' : 'transparent',
+                    color: active ? 'var(--primary-text)' : 'var(--text-2)',
+                    border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                  }}
                 >
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {labels[key]}
-                  </div>
-                  <div className={`text-xl font-semibold mt-0.5 ${colors[key]}`}>{count}</div>
+                  {f.dot && (
+                    <span
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{ background: f.dot }}
+                    />
+                  )}
+                  <span>{f.label}</span>
+                  <span
+                    className="ml-0.5 text-[10.5px] font-semibold tabular-nums"
+                    style={{ color: active ? 'var(--primary-text)' : 'var(--text-3)' }}
+                  >
+                    {countFor(f.key)}
+                  </span>
                 </button>
               );
             })}
           </div>
+
+          {/* Search */}
+          <div className="flex-1 min-w-[200px] max-w-md ml-auto relative">
+            <svg
+              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              style={{ color: 'var(--text-3)' }}
+            >
+              <circle cx="11" cy="11" r="7" strokeWidth="2" />
+              <path d="m21 21-4.3-4.3" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome, telefone ou mensagem…"
+              className="input-base"
+              style={{ paddingLeft: 36, height: 36, fontSize: 13 }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="px-5 py-4">
+        {loading && conversations.length === 0 && (
+          <div className="space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="skeleton h-16 rounded-xl" />
+            ))}
+          </div>
         )}
 
-        {/* Search */}
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar por nome, telefone ou conteudo..."
-          className="input-base"
-        />
+        {!loading && filtered.length === 0 && (
+          <div className="text-center py-20" style={{ color: 'var(--text-3)' }}>
+            <div className="text-sm mb-1">Nenhuma conversa por aqui.</div>
+            <div className="text-xs">
+              {filter !== 'all'
+                ? `Tente outro filtro ou aguarde clientes em "${
+                    FILTERS.find((f) => f.key === filter)?.label
+                  }".`
+                : 'Quando alguem chamar no WhatsApp, vai aparecer aqui.'}
+            </div>
+          </div>
+        )}
 
-        {/* List */}
         <div className="space-y-1.5">
-          {loading && conversations.length === 0 && (
-            <p className="text-center text-muted-foreground text-sm py-12">Carregando...</p>
-          )}
-          {!loading && filtered.length === 0 && (
-            <p className="text-center text-muted-foreground text-sm py-12">
-              Nenhuma conversa
-              {filter !== 'all' ? ` com status "${STATUS_LABELS[filter as keyof typeof STATUS_LABELS]}"` : ''}
-            </p>
-          )}
-          {filtered.map((conv) => (
-            <Link
-              key={conv.id}
-              to={`/conversations/${conv.id}`}
-              className="card-elev-hover hover:bg-card-elevated/40
-                         p-3 flex gap-3 transition-all"
-            >
-              <Avatar
-                fallback={conv.contactName ?? conv.contactPhone}
-                size="md"
-                status={conv.status === 'nina' ? 'online' : conv.status === 'human' ? 'busy' : null}
-              />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-foreground truncate text-sm">
-                    {conv.contactName ?? conv.contactPhone}
-                  </span>
-                  <span className={STATUS_COLORS[conv.status]}>
-                    {STATUS_LABELS[conv.status]}
-                  </span>
-                  {(() => {
-                    const lb = leadBadge(conv.leadScore);
-                    return lb ? (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded border ${lb.cls}`}>
-                        {lb.label}
+          {filtered.map((conv) => {
+            const heat = leadHeat(conv.leadScore);
+            const isDani = conv.status === 'nina';
+            const isHuman = conv.status === 'human';
+            const lastFromAgent = conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human';
+
+            return (
+              <Link
+                key={conv.id}
+                to={`/conversations/${conv.id}`}
+                className="material lift block px-4 py-3 group"
+                style={{ textDecoration: 'none' }}
+              >
+                <div className="flex items-start gap-3">
+                  {/* Avatar com status dot */}
+                  <div className="relative shrink-0">
+                    <Avatar
+                      fallback={conv.contactName ?? `+${conv.contactPhone}`}
+                      size="md"
+                    />
+                    {/* Status dot */}
+                    <span
+                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
+                      style={{
+                        background: isDani
+                          ? 'var(--dani)'
+                          : isHuman
+                          ? 'var(--success)'
+                          : conv.status === 'paused'
+                          ? 'var(--warning)'
+                          : 'var(--text-3)',
+                        borderColor: 'var(--bg-surface)',
+                      }}
+                      title={
+                        isDani
+                          ? 'Dani ativa'
+                          : isHuman
+                          ? 'Humano respondendo'
+                          : conv.status === 'paused'
+                          ? 'Pausada'
+                          : 'Fechada'
+                      }
+                    />
+                  </div>
+
+                  {/* Conteudo */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span
+                        className="text-[14px] font-semibold truncate"
+                        style={{ color: 'var(--text-1)' }}
+                      >
+                        {conv.contactName ?? `+${conv.contactPhone}`}
                       </span>
-                    ) : null;
-                  })()}
-                  {conv.intentLabel && conv.intentLabel !== 'curioso' && (
-                    <span className="badge-neutral">
-                      {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
+
+                      {isDani && (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10.5px] font-semibold shrink-0 px-1.5 py-0.5 rounded-full"
+                          style={{
+                            background: 'var(--dani-bg)',
+                            color: 'var(--dani-text)',
+                          }}
+                        >
+                          ✦ Dani
+                        </span>
+                      )}
+
+                      {heat && (
+                        <span
+                          className="text-[10.5px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
+                          style={{
+                            background: 'transparent',
+                            color: heat.color,
+                            border: `1px solid ${heat.color}`,
+                          }}
+                        >
+                          {heat.label}
+                        </span>
+                      )}
+
+                      {conv.intentLabel && conv.intentLabel !== 'curioso' && (
+                        <span
+                          className="text-[10.5px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
+                          style={{
+                            background: 'var(--bg-subtle)',
+                            color: 'var(--text-2)',
+                          }}
+                        >
+                          {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
+                        </span>
+                      )}
+
+                      {conv.followupState === 'sent' && (
+                        <span
+                          className="text-[10.5px] font-medium px-1.5 py-0.5 rounded-full shrink-0 inline-flex items-center gap-1"
+                          style={{
+                            background: 'var(--dani-bg)',
+                            color: 'var(--dani-text)',
+                          }}
+                        >
+                          ↻ follow-up
+                        </span>
+                      )}
+                    </div>
+
+                    <p
+                      className="text-[12.5px] truncate"
+                      style={{ color: 'var(--text-2)' }}
+                    >
+                      {lastFromAgent && (
+                        <span style={{ color: 'var(--text-3)' }}>
+                          {conv.lastMessageFrom === 'nina' ? '✦ ' : '↳ '}
+                        </span>
+                      )}
+                      {conv.lastMessage ?? <span style={{ color: 'var(--text-3)' }}>(sem mensagens)</span>}
+                    </p>
+                  </div>
+
+                  {/* Timestamp + phone */}
+                  <div className="text-right shrink-0 flex flex-col items-end gap-0.5">
+                    <span
+                      className="text-[11px] tabular-nums"
+                      style={{ color: 'var(--text-3)' }}
+                    >
+                      {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
                     </span>
-                  )}
-                  {conv.followupState === 'sent' && (
-                    <span className="badge-brand">↻ follow-up</span>
-                  )}
+                    {!conv.contactName && (
+                      <span
+                        className="text-[10.5px] tabular-nums font-mono"
+                        style={{ color: 'var(--text-3)' }}
+                      >
+                        +{conv.contactPhone.slice(-4)}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground truncate mt-0.5">
-                  {conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human' ? '↗ ' : ''}
-                  {conv.lastMessage ?? '(sem mensagens)'}
-                </p>
-              </div>
-              <div className="text-xs text-muted-foreground shrink-0 self-start mt-1">
-                {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
-              </div>
-            </Link>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       </div>
     </AppShell>
