@@ -529,6 +529,54 @@ media.post('/force-reactivate-all', async (c) => {
   }
 });
 
+// ── GET /media/find-by-phone?phone=553186583214 ──
+// Acha conversa por telefone (sem precisar accountId).
+media.get('/find-by-phone', async (c) => {
+  const phone = c.req.query('phone') ?? '';
+  if (!phone) return c.json({ error: 'missing phone' }, 400);
+  try {
+    const { contacts, conversations, messages } = await import('../db/schema.js');
+    const { eq, desc } = await import('drizzle-orm');
+    const ct = await db
+      .select({ id: contacts.id, accountId: contacts.accountId, name: contacts.fullName })
+      .from(contacts)
+      .where(eq(contacts.phoneNumber, phone))
+      .limit(1);
+    if (!ct[0]) return c.json({ error: 'contact not found', phone });
+    const conv = await db
+      .select({
+        id: conversations.id,
+        status: conversations.status,
+        lastMessageAt: conversations.lastMessageAt,
+        lastHumanAt: conversations.lastHumanAt,
+      })
+      .from(conversations)
+      .where(eq(conversations.contactId, ct[0].id))
+      .limit(1);
+    if (!conv[0]) return c.json({ error: 'no conversation', contact: ct[0] });
+    const lastMsgs = await db
+      .select({
+        id: messages.id,
+        fromType: messages.fromType,
+        content: messages.content,
+        messageType: messages.messageType,
+        createdAt: messages.createdAt,
+        bufferWindowId: messages.bufferWindowId,
+      })
+      .from(messages)
+      .where(eq(messages.conversationId, conv[0].id))
+      .orderBy(desc(messages.createdAt))
+      .limit(5);
+    return c.json({
+      contact: ct[0],
+      conversation: conv[0],
+      lastMessages: lastMsgs,
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/force-reply ─────────────────────
 // Forca DANI a responder uma conversa especifica AGORA.
 // Util quando cliente respondeu durante pausa humana e msg ficou orfa.
