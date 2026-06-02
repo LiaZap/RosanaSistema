@@ -244,6 +244,8 @@ export default function PipelinePage() {
     }
   }
 
+  const [showFilters, setShowFilters] = useState(false);
+
   if (loading) {
     return (
       <AppShell title="Pipeline" bare>
@@ -259,8 +261,6 @@ export default function PipelinePage() {
   }
 
   void me;
-
-  const [showFilters, setShowFilters] = useState(false);
 
   return (
     <AppShell
