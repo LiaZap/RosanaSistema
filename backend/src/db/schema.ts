@@ -296,6 +296,25 @@ export const produtosCatalogo = pgTable('produtos_catalogo', {
   nomeNormIdx: index('produtos_nome_norm_idx').on(t.nomeNormalizado),
 }));
 
+// ── Google Calendar integration ───────────────────
+export const googleCalendarConnections = pgTable('google_calendar_connections', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id')
+    .notNull()
+    .references(() => accounts.id, { onDelete: 'cascade' })
+    .unique(),
+  email: varchar('email', { length: 255 }),
+  accessToken: text('access_token'),
+  refreshToken: text('refresh_token'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  scope: text('scope'),
+  calendarId: varchar('calendar_id', { length: 255 }).default('primary').notNull(),
+  syncEnabled: boolean('sync_enabled').default(true).notNull(),
+  lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const blingCredentials = pgTable('bling_credentials', {
   id: uuid('id').primaryKey().defaultRandom(),
   accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }).unique(),

@@ -393,6 +393,32 @@ media.get('/conv-status', async (c) => {
   }
 });
 
+// ── POST /media/apply-migration-0010 ─────────────────
+media.post('/apply-migration-0010', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS google_calendar_connections (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        account_id uuid NOT NULL UNIQUE REFERENCES accounts(id) ON DELETE CASCADE,
+        email varchar(255),
+        access_token text,
+        refresh_token text,
+        expires_at timestamp with time zone,
+        scope text,
+        calendar_id varchar(255) NOT NULL DEFAULT 'primary',
+        sync_enabled boolean NOT NULL DEFAULT true,
+        last_sync_at timestamp with time zone,
+        created_at timestamp with time zone NOT NULL DEFAULT now(),
+        updated_at timestamp with time zone NOT NULL DEFAULT now()
+      )
+    `);
+    return c.json({ ok: true, applied: 'google_calendar_connections' });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0009 ─────────────────
 media.post('/apply-migration-0009', async (c) => {
   try {

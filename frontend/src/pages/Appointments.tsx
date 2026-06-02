@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
+import { CalendarMonth } from '../components/ui/CalendarMonth';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -63,6 +64,12 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [view, setView] = useState<'list' | 'calendar'>('calendar');
+  const [gcalStatus, setGcalStatus] = useState<{
+    connected: boolean;
+    email: string | null;
+    configured: boolean;
+  } | null>(null);
   const [saving, setSaving] = useState(false);
   const [newAppt, setNewAppt] = useState({
     title: '',
@@ -87,6 +94,24 @@ export default function AppointmentsPage() {
       });
   }, [navigate]);
 
+  async function loadGcalStatus() {
+    if (!accountId) return;
+    try {
+      const s = await api.get<{ connected: boolean; email: string | null; configured: boolean }>(
+        `/google-calendar/status?accountId=${accountId}`,
+      );
+      setGcalStatus(s);
+    } catch {
+      setGcalStatus({ connected: false, email: null, configured: false });
+    }
+  }
+
+  function handleConnectGcal() {
+    if (!accountId) return;
+    const apiBase = import.meta.env.VITE_API_URL || '/api';
+    window.location.href = `${apiBase}/google-calendar/auth/start?accountId=${accountId}`;
+  }
+
   async function loadList() {
     if (!accountId) return;
     try {
@@ -103,6 +128,16 @@ export default function AppointmentsPage() {
 
   useEffect(() => {
     loadList();
+    loadGcalStatus();
+    // Captura ?gcal_connected=1 ou ?gcal_error pra mostrar feedback
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gcal_connected')) {
+      setError(null);
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (params.get('gcal_error')) {
+      setError(`Google Calendar: ${params.get('gcal_error')}`);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
@@ -228,35 +263,123 @@ export default function AppointmentsPage() {
       title="Agendamentos"
       subtitle={`${appts.length} agendamentos`}
       actions={
-        <button
-          onClick={() => setShowNew(true)}
-          className="px-4 py-2 rounded-lg gradient-pink text-white text-sm font-semibold"
-        >
-          + Novo
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="seg">
+            <button
+              aria-pressed={view === 'calendar'}
+              onClick={() => setView('calendar')}
+            >
+              Calendário
+            </button>
+            <button
+              aria-pressed={view === 'list'}
+              onClick={() => setView('list')}
+            >
+              Lista
+            </button>
+          </div>
+          <button
+            onClick={() => setShowNew(true)}
+            className="btn btn-primary btn-sm"
+          >
+            + Novo
+          </button>
+        </div>
       }
     >
       <div className="space-y-6">
         {error && (
-          <div className="rounded-lg border border-fce-red/40 bg-fce-red/10 p-3 text-sm text-fce-red">
+          <div className="rounded-md p-3 text-sm" style={{ background: 'var(--danger-bg)', color: 'var(--danger)', border: '1px solid color-mix(in oklch, var(--danger) 25%, transparent)' }}>
             {error}
           </div>
         )}
 
-        {loading && (
-          <p className="text-center text-muted-foreground text-sm py-12">Carregando...</p>
+        {/* Google Calendar conexão */}
+        {gcalStatus && (
+          <div className="material p-4 flex items-center gap-4">
+            <div
+              className="w-10 h-10 rounded-md grid place-items-center text-xl"
+              style={{
+                background: gcalStatus.connected ? 'var(--success-bg)' : 'var(--bg-subtle)',
+              }}
+            >
+              📅
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-sm" style={{ color: 'var(--text-1)' }}>
+                  Google Calendar
+                </span>
+                {gcalStatus.connected && (
+                  <span className="badge b-buyer">
+                    <span className="badge-dot" style={{ background: 'var(--success)' }} />{' '}
+                    conectado
+                  </span>
+                )}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
+                {gcalStatus.connected
+                  ? `Sincronizado com ${gcalStatus.email}`
+                  : gcalStatus.configured
+                    ? 'Sincronizar agendamentos com seu Google Calendar'
+                    : 'Configure GOOGLE_CLIENT_ID nos secrets do backend pra habilitar'}
+              </div>
+            </div>
+            {gcalStatus.configured ? (
+              gcalStatus.connected ? (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Desconectar Google Calendar?')) return;
+                    await api.delete(`/google-calendar/connection?accountId=${accountId}`);
+                    await loadGcalStatus();
+                  }}
+                  className="btn btn-secondary btn-sm"
+                >
+                  Desconectar
+                </button>
+              ) : (
+                <button onClick={handleConnectGcal} className="btn btn-primary btn-sm">
+                  Conectar
+                </button>
+              )
+            ) : (
+              <button className="btn btn-secondary btn-sm" disabled>
+                Não configurado
+              </button>
+            )}
+          </div>
         )}
 
-        {!loading && appts.length === 0 && (
-          <p className="text-center text-muted-foreground text-sm py-12">
+        {loading && (
+          <p className="text-center text-sm py-12" style={{ color: 'var(--text-3)' }}>
+            Carregando...
+          </p>
+        )}
+
+        {/* CALENDAR VIEW */}
+        {!loading && view === 'calendar' && (
+          <CalendarMonth
+            events={appts.map((a) => ({
+              id: a.id,
+              title: a.title,
+              date: a.date,
+              time: a.time,
+              type: a.type,
+            }))}
+          />
+        )}
+
+        {/* LIST VIEW */}
+        {!loading && view === 'list' && appts.length === 0 && (
+          <p className="text-center text-sm py-12" style={{ color: 'var(--text-3)' }}>
             Nenhum agendamento. DANI pode criar via "criar_agendamento" ou voce clica em + Novo.
           </p>
         )}
 
         {/* Hoje */}
-        {grouped.today.length > 0 && (
+        {view === 'list' && grouped.today.length > 0 && (
           <div className="space-y-2">
-            <h2 className="text-xs uppercase text-fce-pink font-semibold tracking-wider">
+            <h2 className="text-xs uppercase font-semibold tracking-wider" style={{ color: 'var(--primary-text)' }}>
               Hoje
             </h2>
             {grouped.today.map(renderCard)}
@@ -264,7 +387,7 @@ export default function AppointmentsPage() {
         )}
 
         {/* Proximos */}
-        {grouped.upcoming.length > 0 && (
+        {view === 'list' && grouped.upcoming.length > 0 && (
           <div className="space-y-2">
             <h2 className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">
               Proximos
@@ -274,7 +397,7 @@ export default function AppointmentsPage() {
         )}
 
         {/* Passados */}
-        {grouped.past.length > 0 && (
+        {view === 'list' && grouped.past.length > 0 && (
           <div className="space-y-2">
             <h2 className="text-xs uppercase text-muted-foreground font-semibold tracking-wider">
               Passados
