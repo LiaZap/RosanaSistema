@@ -718,6 +718,19 @@ media.post('/apply-migration-0011', async (c) => {
   }
 });
 
+// ── POST /media/apply-migration-0012 ─────────────────
+// Adiciona campos bia_phone e bia_notify_message na nina_settings
+media.post('/apply-migration-0012', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    await db.execute(sql`ALTER TABLE nina_settings ADD COLUMN IF NOT EXISTS bia_phone varchar(20)`);
+    await db.execute(sql`ALTER TABLE nina_settings ADD COLUMN IF NOT EXISTS bia_notify_message text`);
+    return c.json({ ok: true, applied: ['nina_settings.bia_phone', 'nina_settings.bia_notify_message'] });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0010 ─────────────────
 media.post('/apply-migration-0010', async (c) => {
   try {

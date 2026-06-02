@@ -423,6 +423,19 @@ export default function PipelinePage() {
                       onDragEnd={() => setDraggingId(null)}
                       onDelete={() => handleDeleteDeal(deal.id)}
                       accentColor={color}
+                      stages={stages}
+                      onMove={async (targetStageId) => {
+                        setDeals((prev) =>
+                          prev.map((d) => (d.id === deal.id ? { ...d, stageId: targetStageId } : d)),
+                        );
+                        try {
+                          await api.patch(`/pipeline/deals/${deal.id}`, { accountId, stageId: targetStageId });
+                        } catch {
+                          setDeals((prev) =>
+                            prev.map((d) => (d.id === deal.id ? { ...d, stageId: deal.stageId } : d)),
+                          );
+                        }
+                      }}
                     />
                   ))}
                 </div>
@@ -551,6 +564,8 @@ function DealCard({
   onDragEnd,
   onDelete,
   accentColor,
+  stages,
+  onMove,
 }: {
   deal: Deal;
   dragging: boolean;
@@ -558,8 +573,16 @@ function DealCard({
   onDragEnd: () => void;
   onDelete: () => void;
   accentColor: string;
+  stages: Stage[];
+  onMove: (stageId: string) => Promise<void>;
 }) {
-  void accentColor; // não usado no design Studio - card é totalmente clean
+  void accentColor;
+
+  const wonStage  = stages.find((s) => /ganho/i.test(s.name));
+  const lostStage = stages.find((s) => /perdido/i.test(s.name));
+  const isWon  = wonStage  && deal.stageId === wonStage.id;
+  const isLost = lostStage && deal.stageId === lostStage.id;
+
   return (
     <div
       draggable
@@ -575,7 +598,7 @@ function DealCard({
         boxShadow: 'var(--sh-sm)',
       }}
     >
-      {/* Header: avatar + nome + (badge DANI se criado pela IA) */}
+      {/* Header: avatar + nome */}
       <div className="flex items-center gap-2 mb-1.5">
         {deal.createdByAi ? (
           <DaniAvatar size="sm" />
@@ -590,7 +613,7 @@ function DealCard({
         </span>
         <button
           onClick={onDelete}
-          className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-1"
           style={{ color: 'var(--text-3)' }}
           title="Apagar"
         >
@@ -598,13 +621,51 @@ function DealCard({
         </button>
       </div>
 
-      {/* Descrição: title do deal (truncate 1 linha) */}
-      <div
-        className="text-[12px] mb-2 truncate"
-        style={{ color: 'var(--text-2)' }}
-      >
+      {/* Descrição */}
+      <div className="text-[12px] mb-2 truncate" style={{ color: 'var(--text-2)' }}>
         {deal.title}
       </div>
+
+      {/* Ações rápidas Ganho / Perdido (aparecem no hover, exceto se já estiver em Ganho/Perdido) */}
+      {!isWon && !isLost && (wonStage || lostStage) && (
+        <div className="flex gap-1 mb-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {wonStage && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onMove(wonStage.id); }}
+              className="text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 transition-all hover:scale-105"
+              style={{ background: 'var(--success-bg)', color: 'var(--success)' }}
+              title="Marcar como Ganho"
+            >
+              ✓ Ganho
+            </button>
+          )}
+          {lostStage && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onMove(lostStage.id); }}
+              className="text-[11px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-0.5 transition-all hover:scale-105"
+              style={{ background: 'var(--danger-bg)', color: 'var(--danger)' }}
+              title="Marcar como Perdido"
+            >
+              ✕ Perdido
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Status se Ganho ou Perdido */}
+      {(isWon || isLost) && (
+        <div className="mb-2">
+          <span
+            className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+            style={isWon
+              ? { background: 'var(--success-bg)', color: 'var(--success)' }
+              : { background: 'var(--danger-bg)', color: 'var(--danger)' }
+            }
+          >
+            {isWon ? '✓ Ganho' : '✕ Perdido'}
+          </span>
+        </div>
+      )}
 
       {/* Footer: badges + valor */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -616,16 +677,11 @@ function DealCard({
           )}
         </div>
         {deal.value ? (
-          <span
-            className="text-[13px] font-bold mono tabular-nums shrink-0"
-            style={{ color: 'var(--text-1)' }}
-          >
+          <span className="text-[13px] font-bold mono tabular-nums shrink-0" style={{ color: 'var(--text-1)' }}>
             {fmtBRL(deal.value)}
           </span>
         ) : (
-          <span className="text-[11px] mono" style={{ color: 'var(--text-3)' }}>
-            —
-          </span>
+          <span className="text-[11px] mono" style={{ color: 'var(--text-3)' }}>—</span>
         )}
       </div>
     </div>

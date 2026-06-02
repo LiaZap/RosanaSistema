@@ -21,6 +21,8 @@ interface NinaSettings {
   responseDelayMax: number;
   messageBreakingEnabled: boolean;
   audioResponseEnabled: boolean;
+  biaPhone: string | null;
+  biaNotifyMessage: string | null;
 }
 
 interface ModelOption {
@@ -75,6 +77,8 @@ export default function AgentSettingsPage() {
     companyName: '',
     systemPromptOverride: '',
     aiModelMode: 'flash',
+    biaPhone: '',
+    biaNotifyMessage: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,6 +114,8 @@ export default function AgentSettingsPage() {
           companyName: data.settings.companyName || '',
           systemPromptOverride: data.settings.systemPromptOverride || '',
           aiModelMode: data.settings.aiModelMode || 'flash',
+          biaPhone: data.settings.biaPhone || '',
+          biaNotifyMessage: data.settings.biaNotifyMessage || '',
         });
       }
     } catch (e) {
@@ -140,6 +146,8 @@ export default function AgentSettingsPage() {
           ? form.systemPromptOverride
           : null,
         aiModelMode: form.aiModelMode,
+        biaPhone: form.biaPhone.trim().replace(/\D/g, '') || null,
+        biaNotifyMessage: form.biaNotifyMessage.trim() || null,
       });
       setNotice('Configuracoes salvas! Vai valer pra proximas mensagens.');
       await loadSettings();
@@ -358,6 +366,50 @@ export default function AgentSettingsPage() {
                     ? 'Muito curto (precisa 100+)'
                     : 'Override ativo'}
                 </span>
+              </div>
+            </div>
+
+            {/* Notificação Bia */}
+            <div className="glass rounded-xl p-5 space-y-4">
+              <div>
+                <h2 className="font-semibold text-foreground">Notificação da Bia</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Quando a DANI transferir o atendimento, enviamos uma mensagem pra Bia via WhatsApp.
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs uppercase text-muted-foreground mb-1">
+                  WhatsApp da Bia (número com DDD, sem símbolos)
+                </label>
+                <input
+                  type="text"
+                  value={form.biaPhone}
+                  onChange={(e) => setForm({ ...form, biaPhone: e.target.value })}
+                  placeholder="5531987654321"
+                  maxLength={20}
+                  className="w-full px-3 py-2 rounded-lg bg-card border border-border
+                             text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Formato: código do país + DDD + número. Ex: <code>5531987654321</code>
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs uppercase text-muted-foreground mb-1">
+                  Mensagem customizada pra Bia (opcional)
+                </label>
+                <textarea
+                  value={form.biaNotifyMessage}
+                  onChange={(e) => setForm({ ...form, biaNotifyMessage: e.target.value })}
+                  rows={3}
+                  maxLength={500}
+                  placeholder="Deixe em branco pra usar a mensagem padrão"
+                  className="w-full px-3 py-2 rounded-lg bg-card border border-border
+                             text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Padrão: "⚡ Nova transferência — DANI: Cliente [nome] foi transferido para você."
+                </p>
               </div>
             </div>
 

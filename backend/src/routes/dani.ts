@@ -41,6 +41,9 @@ const settingsUpdateSchema = z.object({
   aiModelMode: z.enum(['flash', 'pro', 'preview', 'lite']).optional(),
   bufferWindowMs: z.number().int().min(1000).max(120_000).optional(),
   bufferMaxMs: z.number().int().min(5_000).max(300_000).optional(),
+  pauseAfterHumanMinutes: z.number().int().min(0).max(1440).optional(),
+  biaPhone: z.string().max(20).nullable().optional(),
+  biaNotifyMessage: z.string().max(1000).nullable().optional(),
 });
 
 /** Garante que o user logado e membro ativo da account */

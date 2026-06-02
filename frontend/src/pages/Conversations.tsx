@@ -75,11 +75,19 @@ function leadHeat(score: number): { label: string; color: string } | null {
   return null;
 }
 
+const PERIOD_OPTIONS = [
+  { value: '7',   label: '7 dias' },
+  { value: '30',  label: '30 dias' },
+  { value: '90',  label: '90 dias' },
+  { value: 'all', label: 'Todas' },
+];
+
 export default function ConversationsPage() {
   const navigate = useNavigate();
   const [, setMe] = useState<MeResponse | null>(null);
   const [accountId, setAccountId] = useState<string>('');
   const [filter, setFilter] = useState<'all' | 'nina' | 'human' | 'paused' | 'closed'>('all');
+  const [period, setPeriod] = useState<string>('30');
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,9 +109,10 @@ export default function ConversationsPage() {
     if (!accountId) return;
     setLoading(true);
     try {
-      const q = filter === 'all' ? '' : `&status=${filter}`;
+      const statusQ = filter === 'all' ? '' : `&status=${filter}`;
+      const daysQ = `&days=${period}`;
       const data = await api.get<{ conversations: ConversationRow[] }>(
-        `/crm/conversations?accountId=${accountId}${q}`,
+        `/crm/conversations?accountId=${accountId}${statusQ}${daysQ}`,
       );
       setConversations(data.conversations);
       const s = await api.get<Stats>(`/crm/stats?accountId=${accountId}`);
@@ -118,7 +127,7 @@ export default function ConversationsPage() {
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, filter]);
+  }, [accountId, filter, period]);
 
   useEffect(() => {
     if (!accountId) return;
@@ -186,6 +195,24 @@ export default function ConversationsPage() {
                 </button>
               );
             })}
+          </div>
+
+          {/* Período */}
+          <div className="flex items-center gap-1 ml-2">
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value)}
+                className="text-[12px] font-medium px-2.5 py-1.5 rounded-full transition-all"
+                style={{
+                  background: period === opt.value ? 'var(--bg-subtle)' : 'transparent',
+                  color: period === opt.value ? 'var(--text-1)' : 'var(--text-3)',
+                  border: `1px solid ${period === opt.value ? 'var(--border-strong)' : 'transparent'}`,
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
 
           {/* Search */}

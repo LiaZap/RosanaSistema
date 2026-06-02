@@ -498,6 +498,57 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
     } satisfies OutboundJobData);
   }
 
+  // 11b. Notifica Bia se DANI escalou pra humano (detecta frase de transferencia).
+  // Usa o biaPhone configurado em nina_settings. Fire-and-forget.
+  (async () => {
+    try {
+      const ESCALATION_PATTERN = /vou transferir.*atendimento.*bia|transferindo.*bia|passar.*bia/i;
+      if (!ESCALATION_PATTERN.test(result.reply)) return;
+
+      const settingsRow = await db.query.ninaSettings.findFirst({
+        where: eq(ninaSettings.accountId, accountId),
+        columns: { biaPhone: true, biaNotifyMessage: true, sdrName: true },
+      });
+      if (!settingsRow?.biaPhone) return;
+
+      const contactRow = await db.query.contacts.findFirst({
+        where: eq(contacts.id, contactId),
+        columns: { name: true, phoneNumber: true },
+      });
+
+      const waSettings = await getEvolutionSettings(accountId);
+      const session = await db.query.whatsappSessions.findFirst({
+        where: eq(whatsappSessions.accountId, accountId),
+        columns: { instanceName: true },
+      });
+      if (!session) return;
+
+      const clientLabel = contactRow?.name
+        ? `*${contactRow.name}* (+${contactRow.phoneNumber})`
+        : `+${contactRow?.phoneNumber ?? phoneNumber}`;
+
+      const msg = settingsRow.biaNotifyMessage?.trim()
+        || `⚡ *Nova transferência — ${settingsRow.sdrName ?? 'DANI'}*\n\nCliente ${clientLabel} foi transferido para você. Responda assim que puder! 🙏`;
+
+      await sendTextMessage({
+        settings: waSettings,
+        instanceName: session.instanceName,
+        phoneNumber: settingsRow.biaPhone,
+        text: msg,
+      });
+
+      logger.info(
+        { conversationId, biaPhone: settingsRow.biaPhone, contactId },
+        '[AiReply] notificacao Bia enviada',
+      );
+    } catch (err) {
+      logger.warn(
+        { err: (err as Error).message, conversationId },
+        '[AiReply] falha ao notificar Bia',
+      );
+    }
+  })();
+
   // 12. Classifica intent + lead_score async (NAO bloqueia o ai-reply).
   // Sprint 7. Erros sao swallowed - classificacao eh nice-to-have, mas
   // logamos warn pra ter visibilidade em producao.

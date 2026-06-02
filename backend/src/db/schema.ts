@@ -176,6 +176,11 @@ export const ninaSettings = pgTable('nina_settings', {
   // Minutos de pausa apos humano responder - DANI nao volta a atender
   // sozinha antes disso. Default 60min.
   pauseAfterHumanMinutes: integer('pause_after_human_minutes').default(60).notNull(),
+  // Numero da Bia pra receber notificacao quando DANI transfere.
+  // Formato internacional sem + (ex: 5531987654321).
+  biaPhone: varchar('bia_phone', { length: 20 }),
+  // Mensagem customizada de notificacao pra Bia (null = mensagem padrao).
+  biaNotifyMessage: text('bia_notify_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });

@@ -74,6 +74,12 @@ crm.get('/conversations', requireAuth, async (c) => {
   const status = statusParse.success ? statusParse.data : null;
   const limit = Math.min(Number(c.req.query('limit') ?? 50), 200);
 
+  // Filtro de periodo: ?days=30 (default) ou ?days=all
+  const daysParam = c.req.query('days');
+  const showAll = daysParam === 'all';
+  const daysNum = daysParam && daysParam !== 'all' ? Math.min(Number(daysParam), 365) : 30;
+  const periodStart = showAll ? null : new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
+
   // Subquery pra ultima mensagem
   const lastMessageSub = db
     .select({
@@ -91,6 +97,12 @@ crm.get('/conversations', requireAuth, async (c) => {
   const whereClauses = [eq(conversations.accountId, accountId)];
   if (status) {
     whereClauses.push(eq(conversations.status, status));
+  }
+  // Filtra por periodo (lastMessageAt ou createdAt dentro do range)
+  if (periodStart) {
+    whereClauses.push(
+      sql`(${conversations.lastMessageAt} >= ${periodStart} OR ${conversations.createdAt} >= ${periodStart})`,
+    );
   }
 
   const rows = await db
