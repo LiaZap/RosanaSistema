@@ -393,6 +393,63 @@ media.get('/conv-status', async (c) => {
   }
 });
 
+// ── POST /media/backfill-deals ──────────────────────
+// Cria deal pra cada conversation que ainda não tem.
+// Pra cobrir conversas anteriores ao auto-deal funcionando.
+media.post('/backfill-deals', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  try {
+    const { conversations, contacts, deals, pipelineStages } = await import('../db/schema.js');
+    const { and, eq, sql, isNull } = await import('drizzle-orm');
+
+    // Stage "Novos Leads" (primeira)
+    const [stage] = await db
+      .select({ id: pipelineStages.id, name: pipelineStages.name })
+      .from(pipelineStages)
+      .where(eq(pipelineStages.accountId, accountId))
+      .orderBy(pipelineStages.position)
+      .limit(1);
+    if (!stage) return c.json({ error: 'pipeline stages nao configurado' }, 400);
+
+    // Conversations que NAO tem deal ainda (LEFT JOIN deals IS NULL)
+    const convs = await db.execute(sql`
+      SELECT c.id AS conv_id, c.contact_id, ct.name AS contact_name
+      FROM conversations c
+      JOIN contacts ct ON ct.id = c.contact_id
+      LEFT JOIN deals d ON d.conversation_id = c.id
+      WHERE c.account_id = ${accountId}
+        AND c.status != 'closed'
+        AND d.id IS NULL
+    `);
+    const rows = (
+      convs as unknown as { rows: Array<{ conv_id: string; contact_id: string; contact_name: string | null }> }
+    ).rows;
+
+    void and;
+    void eq;
+    void isNull;
+
+    let created = 0;
+    for (const r of rows) {
+      const title = r.contact_name ? `Lead: ${r.contact_name}` : 'Lead novo';
+      await db.insert(deals).values({
+        accountId,
+        contactId: r.contact_id,
+        stageId: stage.id,
+        title,
+        notes: 'Backfill automático - conversa pré-existente.',
+        createdByAi: true,
+        conversationId: r.conv_id,
+      });
+      created++;
+    }
+    return c.json({ ok: true, created, stage: stage.name });
+  } catch (err) {
+    return c.json({ error: (err as Error).message, stack: (err as Error).stack?.slice(0, 500) }, 500);
+  }
+});
+
 // ── POST /media/force-reactivate-all ────────────────
 // Reativa MANUALMENTE todas conversas em status=human (admin emergency)
 media.post('/force-reactivate-all', async (c) => {

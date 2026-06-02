@@ -15,14 +15,30 @@ import { logger } from './logger.js';
  */
 
 const BUY_INTENT_PATTERNS = [
-  /\bquero (comprar|levar|fechar)\b/i,
+  /\bquero (comprar|levar|fechar|pegar|esse|essa|o|a)\b/i,
   /\bpode (separar|reservar|mandar|enviar|fechar)\b/i,
-  /\bvou (levar|comprar|fechar|querer|pegar)\b/i,
+  /\bvou (levar|comprar|fechar|querer|pegar|ficar com)\b/i,
   /\bfecha(r)? (o )?pedido\b/i,
-  /\bme (manda|envia)( o)?\b.*\b(pix|pagamento|valor)\b/i,
-  /\bcomo (fa[çc]o|pago|pago|envio)\b.*\bpix\b/i,
+  /\bme (manda|envia)( o)?\b.*\b(pix|pagamento|valor|link)\b/i,
+  /\bcomo (fa[çc]o|pago|envio)\b.*\bpix\b/i,
   /\b(pix|pago) (já|aqui|pra você|para você)\b/i,
+  /\b(qual|onde) (pago|pix|link)\b/i,
+  /\b(separa|reserva)\b.*\b(pra mim|para mim)\b/i,
+  /\b(esse|essa|isso)\b.*\b(serve|cabe|gostei)\b/i,
 ];
+
+/** Detecta intenção FRACA de compra (perguntas comerciais) */
+const SOFT_INTENT_PATTERNS = [
+  /\b(quanto custa|qual o pre[çc]o|valor)\b/i,
+  /\b(tem|tens) (o |a )?\w+/i, // "tem berço", "tens windi"
+  /\b(disponivel|em estoque)\b/i,
+  /\btamanho\b/i,
+  /\b(foto|imagem|ver) (do|da)\b/i,
+];
+
+export function detectSoftBuyIntent(userMessage: string): boolean {
+  return SOFT_INTENT_PATTERNS.some((p) => p.test(userMessage));
+}
 
 const ESCALATION_PHRASE = /vou transferir.*atendimento.*bia/i;
 

@@ -273,11 +273,37 @@ export default function ConversationDetailPage() {
       title={conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'Conversa'}
       subtitle={conversation.contact?.phoneNumber}
       actions={
-        <div className="flex items-center gap-2">
-          <span className={`badge-dot ${STATUS_DOT[conversation.status]} ${conversation.status === 'nina' ? 'animate-pulse-dot' : ''}`} />
-          <span className={STATUS_BADGE[conversation.status]}>
-            {STATUS_LABELS[conversation.status]}
-          </span>
+        <div className="flex items-center gap-3">
+          {/* Toggle Dani ativa / pausada */}
+          <button
+            onClick={() => changeStatus(conversation.status === 'nina' ? 'human' : 'nina')}
+            className="flex items-center gap-2 text-xs"
+            title={conversation.status === 'nina' ? 'Pausar Dani' : 'Reativar Dani'}
+          >
+            <span
+              className="toggle-track"
+              style={{
+                background:
+                  conversation.status === 'nina'
+                    ? 'var(--dani)'
+                    : 'var(--border-strong)',
+              }}
+            >
+              <span
+                className="toggle-thumb"
+                style={{ left: conversation.status === 'nina' ? 20 : 3 }}
+              />
+            </span>
+            <span className="font-semibold" style={{ color: 'var(--text-2)' }}>
+              {conversation.status === 'nina' ? (
+                <>
+                  <span style={{ color: 'var(--dani-text)' }}>✦ Dani</span> ativa
+                </>
+              ) : (
+                'Dani pausada'
+              )}
+            </span>
+          </button>
         </div>
       }
       bare
@@ -355,12 +381,12 @@ export default function ConversationDetailPage() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 bg-background">
-        <div className="max-w-3xl mx-auto space-y-3">
+      <div className="flex-1 overflow-y-auto p-4" style={{ background: 'var(--bg-app)' }}>
+        <div className="max-w-3xl mx-auto flex flex-col gap-3">
           {messages.length === 0 && (
-            <div className="text-center text-muted-foreground text-sm py-16">
+            <div className="text-center text-sm py-16" style={{ color: 'var(--text-3)' }}>
               <p>Nenhuma mensagem ainda</p>
-              <p className="text-xs mt-1 opacity-60">Aguardando primeira interação...</p>
+              <p className="text-xs mt-1 opacity-70">Aguardando primeira interação...</p>
             </div>
           )}
           {messages.map((m, idx) => {
@@ -372,56 +398,53 @@ export default function ConversationDetailPage() {
             const contactName =
               conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'C';
 
+            const time = new Date(m.createdAt).toLocaleString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            });
+
             return (
               <div
                 key={m.id}
                 className={`flex gap-2 ${isClient ? 'justify-start' : 'justify-end'} ${
-                  sameAuthor ? 'mt-0.5' : 'mt-3'
+                  sameAuthor ? '' : 'mt-2'
                 } animate-fade-in`}
               >
-                {/* Avatar client (esquerda) */}
+                {/* Avatar cliente (esquerda) */}
                 {isClient && (
-                  <div className="shrink-0 w-7">
+                  <div className="shrink-0 w-7 flex items-end pb-1">
                     {!sameAuthor && <Avatar fallback={contactName} size="sm" />}
                   </div>
                 )}
-                <div className="flex flex-col gap-0.5 max-w-[75%]">
-                  {!sameAuthor && (
+
+                <div className="flex flex-col">
+                  {/* Label autor */}
+                  {!sameAuthor && !isClient && (
                     <div
-                      className={`text-[10px] text-muted-foreground px-1 ${
-                        isClient ? 'text-left' : 'text-right'
-                      }`}
+                      className={`bubble-author ${isDani ? 'dani' : 'human'} text-right pr-1`}
                     >
-                      {isClient
-                        ? conversation.contact?.name ?? 'Cliente'
-                        : isDani
-                          ? 'DANI'
-                          : 'Bia (humano)'}
+                      {isDani ? '✦ Dani' : '👤 Bia'}
                     </div>
                   )}
+                  {/* Bolha */}
                   <div
                     className={`whitespace-pre-wrap ${
                       isClient ? 'bubble-client' : isDani ? 'bubble-nina' : 'bubble-human'
                     }`}
                   >
                     {m.content ?? <span className="opacity-60">[{m.messageType}]</span>}
-                    <div
-                      className={`text-[10px] mt-1 ${
-                        isClient ? 'text-muted-foreground' : 'opacity-70'
-                      }`}
-                    >
-                      {new Date(m.createdAt).toLocaleString('pt-BR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        day: '2-digit',
-                        month: '2-digit',
-                      })}
-                    </div>
+                  </div>
+                  {/* Timestamp */}
+                  <div
+                    className={`bubble-time ${isClient ? 'text-left pl-1' : 'text-right pr-1'}`}
+                  >
+                    {time}
                   </div>
                 </div>
-                {/* Avatar nina/human (direita) */}
+
+                {/* Avatar Dani/Bia (direita) */}
                 {!isClient && (
-                  <div className="shrink-0 w-7 flex items-center justify-center">
+                  <div className="shrink-0 w-7 flex items-end pb-1">
                     {!sameAuthor && (
                       isDani ? (
                         <DaniAvatar size="sm" active />
@@ -755,7 +778,7 @@ export default function ConversationDetailPage() {
               {error}
             </div>
           )}
-          <form onSubmit={handleSend} className="flex gap-2">
+          <form onSubmit={handleSend} className="flex gap-2 items-end">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -765,16 +788,25 @@ export default function ConversationDetailPage() {
                   ? 'Conversa fechada'
                   : isHumanMode
                     ? 'Responder como Bia...'
-                    : 'Assuma a conversa pra responder'
+                    : 'Sugerir resposta à Dani...'
               }
               className="input-base input-lg flex-1"
             />
             <button
               type="submit"
               disabled={!isHumanMode || isClosed || sending || !input.trim()}
-              className="btn-primary btn-lg"
+              className="btn btn-primary btn-lg shrink-0"
+              style={{ width: 46, padding: 0, justifyContent: 'center' }}
+              aria-label="Enviar"
             >
-              {sending ? '...' : 'Enviar'}
+              {sending ? (
+                '...'
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              )}
             </button>
           </form>
         </div>

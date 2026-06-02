@@ -314,41 +314,140 @@
   .dani-av.lg { width: 56px; height: 56px; font-size: 19px; }
   .dani-av.xl { width: 88px; height: 88px; font-size: 32px; }
 
-  /* ── CONVERSATION BUBBLES ──────────── */
-  /* Cliente (lead) - lado esquerdo, fundo claro */
+  /* ── CONVERSATION BUBBLES (FCE Studio design) ─── */
+  /* Cliente (lead) - lado esquerdo, fundo claro, ponto baixo-esquerdo reto */
   .bubble-client {
     align-self: flex-start;
-    max-width: 80%;
-    background: var(--bg-surface);
+    max-width: 78%;
+    background: var(--bg-subtle);
     color: var(--text-1);
     border: 1px solid var(--border);
-    padding: 10px 14px;
-    border-radius: 4px 14px 14px 14px;
+    padding: 9px 13px;
+    border-radius: 14px 14px 14px 4px;
     font-size: 13.5px;
+    line-height: 1.45;
+    box-shadow: var(--sh-sm);
   }
-  /* DANI - lado direito, violeta (assinatura constante) */
+  /* DANI - lado direito, violeta + ponto baixo-direito reto */
   .bubble-nina {
     align-self: flex-end;
-    max-width: 80%;
+    max-width: 78%;
     background: var(--dani-bg);
     color: var(--dani-text);
-    border: 1px solid color-mix(in oklch, var(--dani) 25%, transparent);
-    padding: 10px 14px;
-    border-radius: 14px 4px 14px 14px;
+    border: 1px solid color-mix(in oklch, var(--dani) 22%, transparent);
+    padding: 9px 13px;
+    border-radius: 14px 14px 4px 14px;
     font-size: 13.5px;
+    line-height: 1.45;
+    box-shadow: var(--sh-sm);
   }
   /* Humano (Bia) - lado direito, primary */
   .bubble-human {
     align-self: flex-end;
-    max-width: 80%;
+    max-width: 78%;
     background: var(--primary);
     color: var(--text-on-primary);
-    padding: 10px 14px;
-    border-radius: 14px 4px 14px 14px;
+    padding: 9px 13px;
+    border-radius: 14px 14px 4px 14px;
     font-size: 13.5px;
+    line-height: 1.45;
+    box-shadow: var(--sh-sm);
   }
   /* Alias retrocompat */
   .bubble-user { @apply bubble-human; }
+
+  /* Mini-card de produto dentro da bolha */
+  .bubble-product {
+    align-self: flex-end;
+    max-width: 78%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: var(--sh-sm);
+  }
+  .bubble-product .thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--primary) 12%, var(--bg-subtle));
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: var(--primary-text);
+  }
+  .bubble-product .info {
+    flex: 1;
+    min-width: 0;
+  }
+  .bubble-product .name {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: var(--text-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .bubble-product .sku {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-3);
+    margin-top: 1px;
+  }
+  .bubble-product .price {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--primary-text);
+    font-feature-settings: "tnum" 1;
+    flex: none;
+  }
+
+  /* Label autor da bolha */
+  .bubble-author {
+    font-size: 10.5px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .bubble-author.dani {
+    color: var(--dani-text);
+  }
+  .bubble-author.human {
+    color: var(--primary-text);
+  }
+  .bubble-time {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text-3);
+    margin-top: 3px;
+  }
+
+  /* Toggle DANI ativa/pausada */
+  .toggle-track {
+    width: 40px;
+    height: 23px;
+    border-radius: var(--r-full);
+    position: relative;
+    display: block;
+    flex: none;
+    cursor: pointer;
+    transition: background .18s;
+  }
+  .toggle-thumb {
+    position: absolute;
+    top: 3px;
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: var(--sh-sm);
+    transition: left .18s cubic-bezier(.4,1.4,.6,1);
+  }
 
   /* ── STAT CARD (KPI) ───────────────── */
   .kpi-card {
