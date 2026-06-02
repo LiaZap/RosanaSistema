@@ -393,6 +393,25 @@ media.get('/conv-status', async (c) => {
   }
 });
 
+// ── POST /media/force-reactivate-all ────────────────
+// Reativa MANUALMENTE todas conversas em status=human (admin emergency)
+media.post('/force-reactivate-all', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+  try {
+    const { conversations } = await import('../db/schema.js');
+    const { eq, and } = await import('drizzle-orm');
+    const result = await db
+      .update(conversations)
+      .set({ status: 'nina', updatedAt: new Date() })
+      .where(and(eq(conversations.accountId, accountId), eq(conversations.status, 'human')))
+      .returning({ id: conversations.id });
+    return c.json({ ok: true, reactivated: result.length, ids: result.map((r) => r.id) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/apply-migration-0011 ─────────────────
 media.post('/apply-migration-0011', async (c) => {
   try {

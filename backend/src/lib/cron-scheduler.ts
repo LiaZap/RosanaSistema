@@ -155,43 +155,51 @@ export function startCronJobs(): void {
     { timezone: TZ },
   );
 
-  // ── Auto-reativar DANI após X min sem resposta humana: a cada 10 min ─
-  // Verifica conversas com status='human' e last_human_at antigo.
-  // Setta status='nina' pra DANI voltar a responder proximo cliente msg.
+  // ── Auto-reativar DANI após X min: a cada 5 min ─────
+  // Reativa quando:
+  //  - status='human' E lastHumanAt < NOW - pauseMin
+  //  OU
+  //  - status='human' E lastHumanAt IS NULL E lastMessageAt < NOW - pauseMin
+  //    (conversas antigas que ficaram com status=human mas sem timestamp)
   cron.schedule(
-    '*/10 * * * *',
+    '*/5 * * * *',
     async () => {
       try {
         const { db } = await import('../db/client.js');
         const { conversations, ninaSettings } = await import('../db/schema.js');
-        const { sql, eq } = await import('drizzle-orm');
-        // Pega settings por account (cada conta pode ter pauseAfterHumanMinutes diferente)
-        const settings = await db.select({
-          accountId: ninaSettings.accountId,
-          pauseMin: ninaSettings.pauseAfterHumanMinutes,
-        }).from(ninaSettings);
+        const { sql } = await import('drizzle-orm');
+        const settings = await db
+          .select({
+            accountId: ninaSettings.accountId,
+            pauseMin: ninaSettings.pauseAfterHumanMinutes,
+          })
+          .from(ninaSettings);
         let total = 0;
         for (const s of settings) {
+          const pauseMinInt = Number.isFinite(s.pauseMin) ? s.pauseMin : 60;
           const result = await db
             .update(conversations)
             .set({ status: 'nina', updatedAt: new Date() })
             .where(
               sql`${conversations.accountId} = ${s.accountId}
                 AND ${conversations.status} = 'human'
-                AND ${conversations.lastHumanAt} IS NOT NULL
-                AND ${conversations.lastHumanAt} < NOW() - INTERVAL '${sql.raw(String(s.pauseMin))} minutes'`,
+                AND (
+                  ${conversations.lastHumanAt} < NOW() - INTERVAL '${sql.raw(String(pauseMinInt))} minutes'
+                  OR (
+                    ${conversations.lastHumanAt} IS NULL
+                    AND ${conversations.lastMessageAt} < NOW() - INTERVAL '${sql.raw(String(pauseMinInt))} minutes'
+                  )
+                )`,
             )
             .returning({ id: conversations.id });
           total += result.length;
           if (result.length > 0) {
             logger.info(
-              { accountId: s.accountId, pauseMin: s.pauseMin, reactivated: result.length },
+              { accountId: s.accountId, pauseMin: pauseMinInt, reactivated: result.length },
               '[Cron] auto-reativou conversas',
             );
           }
         }
-        // ignore eq import unused
-        void eq;
         if (total > 0) {
           logger.info({ total }, '[Cron] auto-reactivate done');
         }

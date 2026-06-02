@@ -274,19 +274,33 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
 
   // Auto-reativa DANI apos X minutos sem resposta do humano
   // (configuracao: nina_settings.pauseAfterHumanMinutes, default 60min)
+  // Tambem reativa conversas antigas (lastHumanAt NULL) cuja ultima msg
+  // foi ha > pauseMin
   const pauseMinutes = settings?.pauseAfterHumanMinutes ?? 60;
-  if (conv.status === 'human' && conv.lastHumanAt) {
-    const minutesSinceHuman = (Date.now() - conv.lastHumanAt.getTime()) / 60_000;
-    if (minutesSinceHuman >= pauseMinutes) {
-      logger.info(
-        { conversationId, minutesSinceHuman, pauseMinutes },
-        '[AiReply] auto-reativando DANI apos timeout humano',
-      );
-      await db
-        .update(conversations)
-        .set({ status: 'nina', updatedAt: new Date() })
-        .where(eq(conversations.id, conversationId));
-      conv.status = 'nina';
+  if (conv.status === 'human') {
+    const ref =
+      conv.lastHumanAt?.getTime() ??
+      (await db
+        .select({ lastMessageAt: conversations.lastMessageAt })
+        .from(conversations)
+        .where(eq(conversations.id, conversationId))
+        .limit(1)
+      )[0]?.lastMessageAt?.getTime() ??
+      null;
+
+    if (ref) {
+      const minutesIdle = (Date.now() - ref) / 60_000;
+      if (minutesIdle >= pauseMinutes) {
+        logger.info(
+          { conversationId, minutesIdle, pauseMinutes, fromHuman: !!conv.lastHumanAt },
+          '[AiReply] auto-reativando DANI apos timeout humano',
+        );
+        await db
+          .update(conversations)
+          .set({ status: 'nina', updatedAt: new Date() })
+          .where(eq(conversations.id, conversationId));
+        conv.status = 'nina';
+      }
     }
   }
 
