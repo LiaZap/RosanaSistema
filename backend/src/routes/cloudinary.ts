@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
   NotFoundError,
@@ -21,6 +21,9 @@ import {
 import { logger } from '../lib/logger.js';
 
 const cloud = new Hono();
+
+// Cloudinary: integracao admin-only.
+cloud.use('*', requireAuth, requireAdmin);
 
 const credentialsSchema = z.object({
   accountId: z.string().uuid(),

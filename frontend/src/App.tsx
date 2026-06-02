@@ -14,26 +14,87 @@ import KnowledgePage from './pages/Knowledge';
 import LibraryPage from './pages/Library';
 import OnboardingPage from './pages/Onboarding';
 import PerfilPage from './pages/Perfil';
+import RequireAdmin from './components/RequireAdmin';
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Publicas / cliente */}
         <Route path="/auth" element={<AuthPage />} />
         <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/dani" element={<DaniTestPage />} />
-        <Route path="/agent" element={<AgentSettingsPage />} />
-        <Route path="/knowledge" element={<KnowledgePage />} />
-        <Route path="/library" element={<LibraryPage />} />
-        <Route path="/onboarding" element={<OnboardingPage />} />
-        <Route path="/bling" element={<BlingPage />} />
-        <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="/conversations" element={<ConversationsPage />} />
         <Route path="/conversations/:id" element={<ConversationDetailPage />} />
-        <Route path="/cloudinary" element={<CloudinaryPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
         <Route path="/appointments" element={<AppointmentsPage />} />
         <Route path="/perfil" element={<PerfilPage />} />
+
+        {/* Admin-only — AX team (owner/admin/superadmin) */}
+        <Route
+          path="/dani"
+          element={
+            <RequireAdmin>
+              <DaniTestPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/agent"
+          element={
+            <RequireAdmin>
+              <AgentSettingsPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/knowledge"
+          element={
+            <RequireAdmin>
+              <KnowledgePage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/library"
+          element={
+            <RequireAdmin>
+              <LibraryPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/onboarding"
+          element={
+            <RequireAdmin>
+              <OnboardingPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/bling"
+          element={
+            <RequireAdmin>
+              <BlingPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/whatsapp"
+          element={
+            <RequireAdmin>
+              <WhatsAppPage />
+            </RequireAdmin>
+          }
+        />
+        <Route
+          path="/cloudinary"
+          element={
+            <RequireAdmin>
+              <CloudinaryPage />
+            </RequireAdmin>
+          }
+        />
+
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

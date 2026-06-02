@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
   NotFoundError,
@@ -13,6 +13,10 @@ import { seedDefaultKB } from '../lib/knowledge-base.js';
 import { logger } from '../lib/logger.js';
 
 const kb = new Hono();
+
+// Knowledge base (RAG): edicao admin-only.
+// A DANI consulta direto no banco no orchestrator (nao passa por aqui).
+kb.use('*', requireAuth, requireAdmin);
 
 const createSchema = z.object({
   accountId: z.string().uuid(),

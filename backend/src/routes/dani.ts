@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../lib/errors.js';
 import { db } from '../db/client.js';
 import {
@@ -21,6 +21,10 @@ import {
 import { logger } from '../lib/logger.js';
 
 const dani = new Hono();
+
+// Todas as rotas /dani sao admin-only (chat de teste, settings, etc).
+// Cliente final (Rosana) NAO precisa do chat de teste — esse e pro AX validar.
+dani.use('*', requireAuth, requireAdmin);
 
 const chatSchema = z.object({
   message: z.string().min(1, 'message required').max(4000),

@@ -14,11 +14,15 @@ interface NavItem {
   to: string;
   label: string;
   icon: ReactNode;
+  /** Se true, esta entrada so aparece pra owner/admin/superadmin (AX) */
+  adminOnly?: boolean;
 }
 
 interface NavSection {
   label: string;
   items: NavItem[];
+  /** Se true, secao inteira so aparece pra admin */
+  adminOnly?: boolean;
 }
 
 // SVG icons - clean, monocromáticos
@@ -66,7 +70,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Visao geral',
     items: [
       { to: '/dashboard', label: 'Dashboard', icon: I.dashboard },
-      { to: '/onboarding', label: 'Onboarding', icon: I.testTube },
+      { to: '/onboarding', label: 'Onboarding', icon: I.testTube, adminOnly: true },
     ],
   },
   {
@@ -79,19 +83,21 @@ const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: 'DANI',
+    adminOnly: true,
     items: [
-      { to: '/agent', label: 'Configuracao', icon: I.agent },
-      { to: '/knowledge', label: 'Base de conhecimento', icon: I.dashboard },
-      { to: '/library', label: 'Biblioteca', icon: I.cloud },
-      { to: '/dani', label: 'Teste de chat', icon: I.testTube },
+      { to: '/agent', label: 'Configuracao', icon: I.agent, adminOnly: true },
+      { to: '/knowledge', label: 'Base de conhecimento', icon: I.dashboard, adminOnly: true },
+      { to: '/library', label: 'Biblioteca', icon: I.cloud, adminOnly: true },
+      { to: '/dani', label: 'Teste de chat', icon: I.testTube, adminOnly: true },
     ],
   },
   {
     label: 'Integracoes',
+    adminOnly: true,
     items: [
-      { to: '/whatsapp', label: 'WhatsApp', icon: I.whatsapp },
-      { to: '/bling', label: 'Bling ERP', icon: I.bling },
-      { to: '/cloudinary', label: 'Cloudinary', icon: I.cloud },
+      { to: '/whatsapp', label: 'WhatsApp', icon: I.whatsapp, adminOnly: true },
+      { to: '/bling', label: 'Bling ERP', icon: I.bling, adminOnly: true },
+      { to: '/cloudinary', label: 'Cloudinary', icon: I.cloud, adminOnly: true },
     ],
   },
 ];
@@ -135,6 +141,24 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
 
   const account = me?.accounts[0];
 
+  // Admin = super admin OU owner/admin no account ativo
+  // Cliente final (Rosana) = manager/sdr → ve so o basico
+  const isAdmin =
+    !!me &&
+    (me.user.isSuperAdmin ||
+      (account?.role === 'owner' || account?.role === 'admin'));
+
+  // Enquanto carrega o /me, esconde itens admin pra evitar flash
+  const visibleSections = NAV_SECTIONS
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => isAdmin || !item.adminOnly),
+    }))
+    .filter(
+      (section) =>
+        section.items.length > 0 && (isAdmin || !section.adminOnly),
+    );
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Sidebar overlay (mobile) */}
@@ -170,7 +194,7 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
 
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto py-3 px-2">
-          {NAV_SECTIONS.map((section) => (
+          {visibleSections.map((section) => (
             <div key={section.label} className="mb-4">
               <div className="px-2.5 mb-1 text-[10px] uppercase font-semibold tracking-wider text-muted-foreground/70">
                 {section.label}

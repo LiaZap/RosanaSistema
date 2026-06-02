@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { and, desc, eq } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
   NotFoundError,
@@ -13,6 +13,11 @@ import { normalizeForSearch } from '../lib/media-library.js';
 import { logger } from '../lib/logger.js';
 
 const media = new Hono();
+
+// Library (PDFs / videos / catalogos da DANI): admin-only.
+// Decisao da reuniao: cliente pode ver mas sera avisado pra nao mexer —
+// portanto bloqueamos backend e exibimos no menu so pra admin.
+media.use('*', requireAuth, requireAdmin);
 
 const createSchema = z.object({
   accountId: z.string().uuid(),

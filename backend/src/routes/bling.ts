@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import { setCookie, getCookie, deleteCookie } from 'hono/cookie';
 import { and, eq } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
   NotFoundError,
@@ -21,6 +21,20 @@ import { getRedis } from '../lib/queues.js';
 import { logger } from '../lib/logger.js';
 
 const bling = new Hono();
+
+// Bling: admin only.
+// Excecao: /auth/callback recebe redirect da bling.com.br e usa state CSRF
+// pra validacao (nao precisa do session cookie do FCE estar valido).
+bling.use('*', async (c, next) => {
+  if (c.req.path === '/bling/auth/callback') {
+    await next();
+    return;
+  }
+  // Aplica requireAuth + requireAdmin para todas as outras rotas
+  await requireAuth(c, async () => {
+    await requireAdmin(c, next);
+  });
+});
 
 const credentialsSchema = z.object({
   accountId: z.string().uuid(),

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
 import { and, eq } from 'drizzle-orm';
-import { requireAuth, getUser } from '../middleware/auth.js';
+import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
   NotFoundError,
@@ -35,6 +35,19 @@ import {
 import { logger } from '../lib/logger.js';
 
 const whatsapp = new Hono();
+
+// WhatsApp: config/instancias sao admin-only.
+// Excecao: POST /webhook/:accountId — webhook publico do Evolution
+// (validado por verifyToken no body, nao usa session cookie).
+whatsapp.use('*', async (c, next) => {
+  if (c.req.path.startsWith('/whatsapp/webhook/')) {
+    await next();
+    return;
+  }
+  await requireAuth(c, async () => {
+    await requireAdmin(c, next);
+  });
+});
 
 const settingsSchema = z.object({
   accountId: z.string().uuid(),
