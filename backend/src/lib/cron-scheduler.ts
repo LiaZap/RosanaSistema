@@ -155,6 +155,53 @@ export function startCronJobs(): void {
     { timezone: TZ },
   );
 
+  // ── Auto-reativar DANI após X min sem resposta humana: a cada 10 min ─
+  // Verifica conversas com status='human' e last_human_at antigo.
+  // Setta status='nina' pra DANI voltar a responder proximo cliente msg.
+  cron.schedule(
+    '*/10 * * * *',
+    async () => {
+      try {
+        const { db } = await import('../db/client.js');
+        const { conversations, ninaSettings } = await import('../db/schema.js');
+        const { sql, eq } = await import('drizzle-orm');
+        // Pega settings por account (cada conta pode ter pauseAfterHumanMinutes diferente)
+        const settings = await db.select({
+          accountId: ninaSettings.accountId,
+          pauseMin: ninaSettings.pauseAfterHumanMinutes,
+        }).from(ninaSettings);
+        let total = 0;
+        for (const s of settings) {
+          const result = await db
+            .update(conversations)
+            .set({ status: 'nina', updatedAt: new Date() })
+            .where(
+              sql`${conversations.accountId} = ${s.accountId}
+                AND ${conversations.status} = 'human'
+                AND ${conversations.lastHumanAt} IS NOT NULL
+                AND ${conversations.lastHumanAt} < NOW() - INTERVAL '${sql.raw(String(s.pauseMin))} minutes'`,
+            )
+            .returning({ id: conversations.id });
+          total += result.length;
+          if (result.length > 0) {
+            logger.info(
+              { accountId: s.accountId, pauseMin: s.pauseMin, reactivated: result.length },
+              '[Cron] auto-reativou conversas',
+            );
+          }
+        }
+        // ignore eq import unused
+        void eq;
+        if (total > 0) {
+          logger.info({ total }, '[Cron] auto-reactivate done');
+        }
+      } catch (err) {
+        logger.error({ err: (err as Error).message }, '[Cron] auto-reactivate error');
+      }
+    },
+    { timezone: TZ },
+  );
+
   logger.info(
     {
       jobs: [
@@ -162,6 +209,7 @@ export function startCronJobs(): void {
         'cloudinary-upload (0 * * * *)',
         'minio-image-cache (*/30 * * * *)',
         'followup-tick (*/5 * * * *)',
+        'auto-reactivate (*/10 * * * *)',
       ],
       tz: TZ,
     },

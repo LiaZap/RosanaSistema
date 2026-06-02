@@ -235,6 +235,72 @@ media.get('/file/:productId/:idx?', async (c) => {
   }
 });
 
+// ── GET /media/stuck-conversations ───────────────────
+// Lista conversas com msgs de cliente nao respondidas pela DANI
+media.get('/stuck-conversations', async (c) => {
+  const accountId = c.req.query('accountId') ?? '';
+  if (!accountId) return c.json({ error: 'missing accountId' }, 400);
+
+  try {
+    const { sql } = await import('drizzle-orm');
+    const result = await db.execute(sql`
+      WITH last_msg AS (
+        SELECT
+          c.id AS conv_id,
+          c.status,
+          c.last_human_at,
+          c.last_message_at,
+          ct.name AS contact_name,
+          ct.phone_number AS phone,
+          (SELECT m.from_type FROM messages m WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC LIMIT 1) AS last_from,
+          (SELECT m.content FROM messages m WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC LIMIT 1) AS last_content,
+          (SELECT m.created_at FROM messages m WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC LIMIT 1) AS last_at
+        FROM conversations c
+        JOIN contacts ct ON ct.id = c.contact_id
+        WHERE c.account_id = ${accountId}
+          AND c.status IN ('nina', 'human')
+      )
+      SELECT *,
+        EXTRACT(EPOCH FROM (NOW() - last_at))/60 AS minutes_idle,
+        EXTRACT(EPOCH FROM (NOW() - last_human_at))/60 AS minutes_since_human
+      FROM last_msg
+      WHERE last_from = 'user'
+        AND last_at > NOW() - INTERVAL '7 days'
+      ORDER BY last_at DESC
+      LIMIT 50
+    `);
+
+    const rows = (result as unknown as { rows: Array<Record<string, unknown>> }).rows;
+
+    return c.json({
+      total: rows.length,
+      conversations: rows.map((r) => ({
+        contact: r.contact_name,
+        phone: r.phone,
+        status: r.status,
+        lastFrom: r.last_from,
+        lastContent: (r.last_content as string | null)?.slice(0, 100),
+        lastAt: r.last_at,
+        minutesIdle: Math.round(Number(r.minutes_idle ?? 0)),
+        minutesSinceHuman: r.minutes_since_human
+          ? Math.round(Number(r.minutes_since_human))
+          : null,
+        diagnosis:
+          r.status === 'human' && r.minutes_since_human && Number(r.minutes_since_human) > 60
+            ? 'SHOULD-AUTOREACTIVATE'
+            : r.status === 'human'
+              ? 'human-pause-active'
+              : 'nina-not-responding',
+      })),
+    });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── GET /media/conv-status?phone=... ─────────────────
 // Diagnostico completo do status de uma conversa pelo telefone
 media.get('/conv-status', async (c) => {
