@@ -586,7 +586,7 @@ media.post('/force-reply', async (c) => {
   if (!conversationId) return c.json({ error: 'missing conversationId' }, 400);
   try {
     const { conversations, contacts, messages } = await import('../db/schema.js');
-    const { eq, desc, and, isNull } = await import('drizzle-orm');
+    const { eq, desc, and, sql } = await import('drizzle-orm');
     const { aiReplyQueue } = await import('../lib/queues.js');
     const { getRedis } = await import('../lib/queues.js');
     const { randomUUID } = await import('crypto');
@@ -618,34 +618,62 @@ media.post('/force-reply', async (c) => {
       .limit(1);
     if (!ct[0]) return c.json({ error: 'contact not found' }, 404);
 
-    // Pega ultima msg
-    const lastMsg = await db
-      .select({ id: messages.id, bufferWindowId: messages.bufferWindowId, fromType: messages.fromType })
+    // Pega msgs nao processadas do USER apos a ultima resposta do agente
+    const lastAgent = await db
+      .select({ createdAt: messages.createdAt })
       .from(messages)
-      .where(eq(messages.conversationId, conversationId))
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          sql`from_type IN ('nina', 'human')`,
+        ),
+      )
       .orderBy(desc(messages.createdAt))
       .limit(1);
-    if (!lastMsg[0]) return c.json({ error: 'no messages' }, 400);
-    if (lastMsg[0].fromType !== 'user') {
-      return c.json({ error: 'ultima msg nao eh do cliente', fromType: lastMsg[0].fromType }, 400);
+
+    const cutoff = lastAgent[0]?.createdAt ?? new Date(0);
+
+    const pendingUserMsgs = await db
+      .select({ id: messages.id, bufferWindowId: messages.bufferWindowId, createdAt: messages.createdAt })
+      .from(messages)
+      .where(
+        and(
+          eq(messages.conversationId, conversationId),
+          eq(messages.fromType, 'user'),
+          sql`created_at > ${cutoff}`,
+        ),
+      )
+      .orderBy(messages.createdAt);
+
+    if (pendingUserMsgs.length === 0) {
+      return c.json({ error: 'nenhuma msg do cliente pendente apos ultima resposta', cutoff }, 400);
     }
 
-    let windowId = lastMsg[0].bufferWindowId;
-    if (!windowId) {
-      windowId = randomUUID();
+    // Cria window novo + escreve TUDO no Redis (LIST + WIN + LAST)
+    const windowId = randomUUID();
+    const redis = getRedis();
+    const bufKey = `fce:buf:${conversationId}`;
+    const winKey = `fce:buf:${conversationId}:win`;
+    const lastKey = `fce:buf:${conversationId}:last`;
+
+    // Limpa qualquer buffer obsoleto
+    await redis.del(bufKey);
+    await redis.del(winKey);
+    await redis.del(lastKey);
+
+    // Atualiza msgs no DB com novo windowId
+    for (const m of pendingUserMsgs) {
       await db
         .update(messages)
-        .set({ bufferWindowId: windowId })
-        .where(
-          and(
-            eq(messages.conversationId, conversationId),
-            isNull(messages.bufferWindowId),
-            eq(messages.fromType, 'user'),
-          ),
-        );
-      const redis = getRedis();
-      await redis.set(`fce:buf:${conversationId}:win`, windowId, 'EX', 600);
+        .set({ bufferWindowId: windowId, processedByNina: false })
+        .where(eq(messages.id, m.id));
+      await redis.rpush(bufKey, m.id);
     }
+
+    const lastAt = pendingUserMsgs[pendingUserMsgs.length - 1]!.createdAt.getTime();
+    await redis.set(winKey, windowId, 'EX', 5400);
+    await redis.set(lastKey, String(lastAt), 'EX', 5400);
+    await redis.expire(bufKey, 5400);
 
     await aiReplyQueue.add(
       'process',
@@ -662,7 +690,13 @@ media.post('/force-reply', async (c) => {
       },
     );
 
-    return c.json({ ok: true, conversationId, windowId, queued: true });
+    return c.json({
+      ok: true,
+      conversationId,
+      windowId,
+      pendingMsgs: pendingUserMsgs.length,
+      queued: true,
+    });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 500);
   }
