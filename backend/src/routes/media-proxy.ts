@@ -609,6 +609,151 @@ media.get('/find-by-phone', async (c) => {
   }
 });
 
+// ── POST /media/debug-reply ─────────────────────
+// Processa a conversa SINCRONAMENTE (chama o orchestrator direto) e retorna
+// exatamente o que a DANI gerou: shouldReply, reply, attachments, reasoning, erro.
+// Se ?send=1, tambem ENVIA (salva nina + enfileira outbound com imagens).
+// Diagnostico + acao manual num so endpoint.
+media.post('/debug-reply', async (c) => {
+  const conversationId = c.req.query('conversationId') ?? '';
+  const doSend = c.req.query('send') === '1';
+  if (!conversationId) return c.json({ error: 'missing conversationId' }, 400);
+  try {
+    const { conversations, contacts, messages } = await import('../db/schema.js');
+    const { eq, desc, and, sql } = await import('drizzle-orm');
+    const { processDaniMessage } = await import('../lib/dani-orchestrator.js');
+    const { loadHistory, saveMessage } = await import('../lib/dani-conversations.js');
+    const { transformedUrl } = await import('../lib/cloudinary-client.js');
+    const { outboundQueue } = await import('../lib/queues.js');
+
+    const conv = await db
+      .select({
+        id: conversations.id,
+        accountId: conversations.accountId,
+        contactId: conversations.contactId,
+        status: conversations.status,
+      })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (!conv[0]) return c.json({ error: 'conversation not found' }, 404);
+
+    const ct = await db
+      .select({ phone: contacts.phoneNumber })
+      .from(contacts)
+      .where(eq(contacts.id, conv[0].contactId))
+      .limit(1);
+    if (!ct[0]) return c.json({ error: 'contact not found' }, 404);
+
+    // Pega msgs do USER pendentes (apos a ultima msg de agente)
+    const lastAgent = await db
+      .select({ createdAt: messages.createdAt })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversationId), sql`from_type IN ('nina','human')`))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    const cutoff = lastAgent[0]?.createdAt ?? new Date(0);
+
+    const pending = await db
+      .select({ content: messages.content })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversationId), eq(messages.fromType, 'user'), sql`created_at > ${cutoff}`))
+      .orderBy(messages.createdAt);
+
+    const combinedText = pending.map((m) => m.content ?? '').filter(Boolean).join('\n').trim();
+    if (!combinedText) return c.json({ error: 'nenhuma msg do cliente pendente', cutoff }, 400);
+
+    // Historico (exclui as pendentes do fim)
+    const fullHistory = await loadHistory(conversationId, 30 + pending.length);
+    const history = fullHistory.slice(0, Math.max(0, fullHistory.length - pending.length));
+
+    // Processa via DANI (sincrono, captura erro)
+    let result;
+    try {
+      result = await processDaniMessage(combinedText, {
+        accountId: conv[0].accountId,
+        contactId: conv[0].contactId,
+        conversationId,
+        history,
+      });
+    } catch (err) {
+      return c.json({ stage: 'processDaniMessage', error: (err as Error).message, combinedText }, 500);
+    }
+
+    const diag = {
+      combinedText,
+      shouldReply: result.shouldReply,
+      reply: result.reply,
+      replyLength: result.reply?.length ?? 0,
+      attachments: result.attachments.map((a) => ({ type: a.type, url: a.url.slice(0, 80) })),
+      attachmentsCount: result.attachments.length,
+      reasoning: result.reasoning,
+      modelUsed: result.modelUsed,
+      sent: false as boolean,
+    };
+
+    // Envia de verdade se ?send=1 e DANI decidiu responder
+    if (doSend && result.shouldReply && result.reply) {
+      await saveMessage({
+        conversationId,
+        accountId: conv[0].accountId,
+        fromType: 'nina',
+        content: result.reply,
+        processedByNina: true,
+      });
+
+      const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
+      const toAbsolute = (url: string): string =>
+        url.startsWith('http')
+          ? (url.includes('res.cloudinary.com') ? transformedUrl(url) : url)
+          : `${API_BASE}${url.startsWith('/') ? '' : '/'}${url}`;
+
+      const imageAttachments = result.attachments.filter((a) => a.type === 'image');
+      const firstDoc = result.attachments.find((a) => a.type === 'document' || a.type === 'video' || a.type === 'audio');
+
+      if (imageAttachments.length > 0) {
+        await outboundQueue.add('send', {
+          accountId: conv[0].accountId,
+          phoneNumber: ct[0].phone,
+          imageUrl: toAbsolute(imageAttachments[0]!.url),
+          caption: result.reply,
+          conversationId,
+        });
+        for (let i = 1; i < Math.min(imageAttachments.length, 5); i++) {
+          await outboundQueue.add('send', {
+            accountId: conv[0].accountId,
+            phoneNumber: ct[0].phone,
+            imageUrl: toAbsolute(imageAttachments[i]!.url),
+            conversationId,
+          });
+        }
+      } else if (firstDoc) {
+        await outboundQueue.add('send', {
+          accountId: conv[0].accountId,
+          phoneNumber: ct[0].phone,
+          mediaUrl: toAbsolute(firstDoc.url),
+          mediaType: firstDoc.type,
+          fileName: firstDoc.fileName,
+          caption: result.reply,
+          conversationId,
+        });
+      } else {
+        await outboundQueue.add('send', {
+          accountId: conv[0].accountId,
+          phoneNumber: ct[0].phone,
+          text: result.reply,
+          conversationId,
+        });
+      }
+      diag.sent = true;
+    }
+
+    return c.json({ ok: true, ...diag });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
 // ── POST /media/force-reply ─────────────────────
 // Forca DANI a responder uma conversa especifica AGORA.
 // Util quando cliente respondeu durante pausa humana e msg ficou orfa.
