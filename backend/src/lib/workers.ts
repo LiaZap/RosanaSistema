@@ -419,6 +419,7 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
     result = await processDaniMessage(combinedText, {
       accountId,
       contactId,
+      conversationId,
       history,
     });
   } catch (err) {

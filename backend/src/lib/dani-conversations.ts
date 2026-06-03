@@ -125,6 +125,8 @@ export async function saveMessage(opts: {
   fromType: 'user' | 'nina' | 'human';
   content: string;
   processedByNina?: boolean;
+  messageType?: 'text' | 'image' | 'audio' | 'document' | 'video';
+  mediaUrl?: string;
 }): Promise<{ id: string }> {
   const [saved] = await db
     .insert(messages)
@@ -132,8 +134,9 @@ export async function saveMessage(opts: {
       conversationId: opts.conversationId,
       accountId: opts.accountId,
       fromType: opts.fromType,
-      messageType: 'text',
+      messageType: opts.messageType ?? 'text',
       content: opts.content,
+      mediaUrl: opts.mediaUrl,
       processedByNina: opts.processedByNina ?? false,
     })
     .returning({ id: messages.id });

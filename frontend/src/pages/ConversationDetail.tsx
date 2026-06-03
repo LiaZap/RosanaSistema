@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
@@ -778,39 +778,153 @@ export default function ConversationDetailPage() {
               {error}
             </div>
           )}
-          <form onSubmit={handleSend} className="flex gap-2 items-end">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              disabled={!isHumanMode || isClosed || sending}
-              placeholder={
-                isClosed
-                  ? 'Conversa fechada'
-                  : isHumanMode
-                    ? 'Responder como Bia...'
-                    : 'Sugerir resposta à Dani...'
-              }
-              className="input-base input-lg flex-1"
-            />
-            <button
-              type="submit"
-              disabled={!isHumanMode || isClosed || sending || !input.trim()}
-              className="btn btn-primary btn-lg shrink-0"
-              style={{ width: 46, padding: 0, justifyContent: 'center' }}
-              aria-label="Enviar"
-            >
-              {sending ? (
-                '...'
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              )}
-            </button>
+          <form onSubmit={handleSend} className="flex flex-col gap-2">
+            {/* Barra de ferramentas (emoji + anexar) */}
+            {isHumanMode && !isClosed && (
+              <div className="flex items-center gap-1 px-1">
+                {/* Emoji picker básico (grade de emojis comuns) */}
+                <EmojiPicker onPick={(e) => setInput((v) => v + e)} />
+                {/* Anexar imagem */}
+                <label
+                  className="btn btn-ghost btn-sm px-2 py-1 cursor-pointer"
+                  title="Enviar imagem"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                    <circle cx="8.5" cy="8.5" r="1.5" />
+                    <polyline points="21 15 16 10 5 21" />
+                  </svg>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !accountId || !conversationId) return;
+                      setSending(true);
+                      try {
+                        const fd = new FormData();
+                        fd.append('file', file);
+                        fd.append('conversationId', conversationId);
+                        fd.append('accountId', accountId);
+                        await api.postForm(`/crm/conversations/${conversationId}/upload?accountId=${accountId}`, fd);
+                        await loadDetail();
+                      } catch (err) {
+                        setError(err instanceof ApiError ? err.message : 'Falha ao enviar imagem');
+                      } finally {
+                        setSending(false);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+
+            <div className="flex gap-2 items-end">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!isHumanMode || isClosed || sending || !input.trim()) return;
+                    handleSend(e as unknown as React.FormEvent);
+                  }
+                }}
+                disabled={!isHumanMode || isClosed || sending}
+                placeholder={
+                  isClosed
+                    ? 'Conversa fechada'
+                    : isHumanMode
+                      ? 'Responder como Bia… (Enter envia, Shift+Enter quebra linha)'
+                      : 'Sugerir resposta à Dani…'
+                }
+                rows={1}
+                className="input-base input-lg flex-1 resize-none"
+                style={{ minHeight: 44, maxHeight: 120, overflowY: 'auto' }}
+              />
+              <button
+                type="submit"
+                disabled={!isHumanMode || isClosed || sending || !input.trim()}
+                className="btn btn-primary btn-lg shrink-0"
+                style={{ width: 46, height: 44, padding: 0, justifyContent: 'center' }}
+                aria-label="Enviar"
+              >
+                {sending ? (
+                  <svg width="16" height="16" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.3"/><path d="M12 2a10 10 0 0 1 10 10" /></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>
     </AppShell>
+  );
+}
+
+// ── Emoji picker simples ─────────────────────────────
+const COMMON_EMOJIS = [
+  '😀','😂','😊','😍','🥰','😘','😎','🤩','😅','😂',
+  '🙏','👍','👏','❤️','🔥','✨','🎉','💯','🤝','👋',
+  '😢','😱','🤔','💪','🙌','👌','💕','🌟','🎊','🥳',
+  '📦','📸','📋','📞','💬','📱','🛒','💰','✅','⚡',
+];
+
+function EmojiPicker({ onPick }: { onPick: (e: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    if (ref.current && !ref.current.contains(e.target as Node)) {
+      setOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [open, handleClickOutside]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="btn btn-ghost btn-sm px-2 py-1"
+        title="Emoji"
+      >
+        <span style={{ fontSize: 18, lineHeight: 1 }}>😊</span>
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-full left-0 mb-2 rounded-xl p-2 z-50"
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            boxShadow: 'var(--sh-lg)',
+            width: 240,
+          }}
+        >
+          <div className="grid grid-cols-8 gap-0.5">
+            {COMMON_EMOJIS.map((em) => (
+              <button
+                key={em}
+                type="button"
+                onClick={() => { onPick(em); setOpen(false); }}
+                className="text-[18px] p-1 rounded hover:bg-muted transition-colors leading-none"
+              >
+                {em}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

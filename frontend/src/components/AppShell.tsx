@@ -115,6 +115,7 @@ const NAV_SECTIONS: NavSection[] = [
     superAdminOnly: true,
     items: [
       { to: '/admin/users', label: 'Usuarios & Logins', icon: I.users, superAdminOnly: true },
+      { to: '/admin/token-cost', label: 'Custo de tokens', icon: I.shield, superAdminOnly: true },
     ],
   },
 ];

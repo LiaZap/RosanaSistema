@@ -185,6 +185,22 @@ export const ninaSettings = pgTable('nina_settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ── Token usage ──────────────────────────────────────
+// Acumulado por account por mes para rastrear custos Gemini
+export const tokenUsageLogs = pgTable('token_usage_logs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  accountId: uuid('account_id').notNull().references(() => accounts.id, { onDelete: 'cascade' }),
+  conversationId: uuid('conversation_id'), // nullable (pode vir de test chat)
+  model: varchar('model', { length: 100 }).notNull(),
+  inputTokens: integer('input_tokens').default(0).notNull(),
+  outputTokens: integer('output_tokens').default(0).notNull(),
+  totalTokens: integer('total_tokens').default(0).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  accountIdx: index('token_usage_account_idx').on(t.accountId),
+  createdAtIdx: index('token_usage_created_idx').on(t.createdAt),
+}));
+
 // ── WhatsApp ─────────────────────────────────────────
 
 export const whatsappSessions = pgTable('whatsapp_sessions', {

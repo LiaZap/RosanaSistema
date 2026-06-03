@@ -53,6 +53,11 @@ export interface GenerateResult {
   text: string;
   toolCalls: ToolCallRecord[];
   iterations: number;
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
 }
 
 // 4 iterations: deixa Gemini fazer 3-4 tool calls e ainda ter espaço pra texto
@@ -115,10 +120,17 @@ export async function generateDaniReply(opts: {
     // Sem function calls -> resposta final
     if (!calls || calls.length === 0) {
       const text = result.response.text();
-      // Log de debug se vier vazio (Sprint observabilidade)
       const candidate = result.response.candidates?.[0];
       const finishReason = candidate?.finishReason;
       const safetyRatings = candidate?.safetyRatings;
+
+      // Captura usage metadata (tokens)
+      const meta = (result.response as unknown as { usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } }).usageMetadata;
+      const usage = meta ? {
+        inputTokens: meta.promptTokenCount ?? 0,
+        outputTokens: meta.candidatesTokenCount ?? 0,
+        totalTokens: meta.totalTokenCount ?? 0,
+      } : undefined;
 
       logger.info(
         {
@@ -126,11 +138,12 @@ export async function generateDaniReply(opts: {
           toolCallsTotal: toolCalls.length,
           outputChars: text.length,
           finishReason,
+          usage,
           ...(text.length === 0 ? { safetyRatings, fullResponse: JSON.stringify(result.response).slice(0, 500) } : {}),
         },
         '[Gemini] DANI reply ready',
       );
-      return { text, toolCalls, iterations: iterations + 1 };
+      return { text, toolCalls, iterations: iterations + 1, usage };
     }
 
     if (!opts.toolHandler) {

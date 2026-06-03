@@ -18,6 +18,7 @@ import {
   deals,
   messages,
   produtosCatalogo,
+  tokenUsageLogs,
   whatsappSessions,
 } from '../db/schema.js';
 import { saveMessage } from '../lib/dani-conversations.js';
@@ -796,6 +797,164 @@ ${topProds.length > 0 ? `
 </html>`;
 
   return c.html(html);
+});
+
+// ── POST /crm/conversations/:id/upload ───────────────
+// Bia envia imagem pra um contato. Salva no MinIO e manda via Evolution.
+crm.post('/conversations/:id/upload', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  const conv = await assertConversationInAccount(conversationId, accountId);
+
+  const body = await c.req.parseBody();
+  const file = body['file'];
+  if (!file || typeof file === 'string') throw new ValidationError('file required');
+
+  const contact = await db.query.contacts.findFirst({ where: eq(contacts.id, conv.contactId) });
+  if (!contact) throw new NotFoundError('Contact not found');
+
+  // Upload pra MinIO
+  const { getS3 } = await import('../lib/minio-cache.js');
+  const { PutObjectCommand } = await import('@aws-sdk/client-s3');
+  const arrayBuffer = await (file as File).arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const ext = (file as File).name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const key = `chat/${accountId}/${conversationId}/${Date.now()}.${ext}`;
+  const bucket = process.env.MINIO_BUCKET || 'fce-media';
+
+  await getS3().send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: buffer,
+    ContentType: (file as File).type || 'image/jpeg',
+  }));
+
+  const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
+  const publicUrl = `${API_BASE}/media/chat/${encodeURIComponent(key)}`;
+
+  // Salva no banco
+  await saveMessage({
+    conversationId,
+    accountId,
+    fromType: 'human',
+    content: `[imagem]`,
+    messageType: 'image',
+    mediaUrl: publicUrl,
+  });
+
+  // Envia via Evolution se nao for test
+  const isTestPhone = contact.phoneNumber.startsWith('test:');
+  if (!isTestPhone) {
+    try {
+      const settings = await getEvolutionSettings(accountId);
+      const session = await db.query.whatsappSessions.findFirst({
+        where: eq(whatsappSessions.accountId, accountId),
+      });
+      if (session) {
+        const { sendMediaMessage } = await import('../lib/evolution-client.js');
+        await sendMediaMessage({
+          settings,
+          instanceName: session.instanceName,
+          phoneNumber: contact.phoneNumber,
+          mediaUrl: publicUrl,
+          caption: '',
+          mediaType: 'image',
+        });
+      }
+    } catch (err) {
+      logger.error({ err: (err as Error).message, conversationId }, '[CRM] falha ao enviar imagem via WhatsApp');
+    }
+  }
+
+  return c.json({ ok: true, url: publicUrl });
+});
+
+// ── GET /crm/token-usage ─────────────────────────────
+// Estatisticas de tokens gastos por mes/modelo.
+// So acessivel pra owner/admin (custo e info sensivel).
+crm.get('/token-usage', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  // Precisa ser admin
+  const [membership] = await db
+    .select({ role: accountMembers.role })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.userId, user.id), eq(accountMembers.accountId, accountId)))
+    .limit(1);
+  if (!membership || (membership.role !== 'owner' && membership.role !== 'admin' && !user.isSuperAdmin)) {
+    throw new ForbiddenError('Apenas admin pode ver custos');
+  }
+
+  // Agrupa por mes + modelo nos ultimos 6 meses
+  const sixMonthsAgo = new Date();
+  sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+  const rows = await db.execute(sql`
+    SELECT
+      to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+      model,
+      SUM(input_tokens)::int   AS input_tokens,
+      SUM(output_tokens)::int  AS output_tokens,
+      SUM(total_tokens)::int   AS total_tokens,
+      COUNT(*)::int            AS calls
+    FROM token_usage_logs
+    WHERE account_id = ${accountId}
+      AND created_at >= ${sixMonthsAgo}
+    GROUP BY 1, 2
+    ORDER BY 1 DESC, 3 DESC
+  `);
+
+  // Totais do mes atual
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+
+  const monthTotalResult = await db.execute(sql`
+    SELECT
+      SUM(input_tokens)::int  AS input_tokens,
+      SUM(output_tokens)::int AS output_tokens,
+      SUM(total_tokens)::int  AS total_tokens,
+      COUNT(*)::int           AS calls
+    FROM token_usage_logs
+    WHERE account_id = ${accountId}
+      AND created_at >= ${startOfMonth}
+  `);
+  const monthTotal = monthTotalResult;
+
+  // Precos estimados Gemini Flash (USD por 1M tokens, Jun/2026)
+  // Input: $0.075/1M  Output: $0.30/1M
+  const INPUT_PRICE_PER_M  = 0.075;
+  const OUTPUT_PRICE_PER_M = 0.30;
+  const USD_TO_BRL = 5.15; // aprox
+
+  function estimateCost(input: number, output: number) {
+    const usd = (input / 1_000_000) * INPUT_PRICE_PER_M + (output / 1_000_000) * OUTPUT_PRICE_PER_M;
+    return { usd: Math.round(usd * 1000) / 1000, brl: Math.round(usd * USD_TO_BRL * 100) / 100 };
+  }
+
+  const monthRow = (monthTotal as unknown as { rows: Array<{ input_tokens: number; output_tokens: number; total_tokens: number; calls: number }> }).rows[0];
+  const monthCost = monthRow ? estimateCost(monthRow.input_tokens ?? 0, monthRow.output_tokens ?? 0) : { usd: 0, brl: 0 };
+
+  const byMonth = (rows as unknown as { rows: Array<{ month: string; model: string; input_tokens: number; output_tokens: number; total_tokens: number; calls: number }> }).rows.map((r) => ({
+    ...r,
+    cost: estimateCost(r.input_tokens, r.output_tokens),
+  }));
+
+  return c.json({
+    currentMonth: {
+      ...(monthRow ?? { input_tokens: 0, output_tokens: 0, total_tokens: 0, calls: 0 }),
+      cost: monthCost,
+    },
+    byMonth,
+    note: 'Precos estimados: Gemini Flash $0.075/1M input + $0.30/1M output (Jun/2026)',
+  });
 });
 
 export default crm;

@@ -115,6 +115,31 @@ media.get('/proxy', async (c) => {
 // ── GET /media/file/:productId/:idx? ────────────────
 // Serve imagem do MinIO. idx 0 = principal, 1+ = adicionais.
 // Se nao tem ainda, faz upload lazy de TODAS as imagens do produto.
+// ── GET /media/chat/:key — serve imagens enviadas pelo humano no chat ──
+// key vem URL-encoded: ex. chat/accountId/convId/123456.jpg
+media.get('/chat/:key{.+}', async (c) => {
+  const key = decodeURIComponent(c.req.param('key'));
+  if (!key.startsWith('chat/')) return c.notFound();
+  try {
+    const { getS3 } = await import('../lib/minio-cache.js');
+    const { GetObjectCommand } = await import('@aws-sdk/client-s3');
+    const bucket = process.env.MINIO_BUCKET || 'fce-media';
+    const obj = await getS3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    if (!obj.Body) return c.notFound();
+    const Readable = (await import('stream')).Readable;
+    const chunks: Buffer[] = [];
+    for await (const chunk of obj.Body as unknown as AsyncIterable<Buffer>) {
+      chunks.push(chunk instanceof Buffer ? chunk : Buffer.from(chunk));
+    }
+    const buf = Buffer.concat(chunks);
+    c.header('Content-Type', obj.ContentType ?? 'image/jpeg');
+    c.header('Cache-Control', 'private, max-age=3600');
+    return c.body(buf as unknown as ArrayBuffer);
+  } catch {
+    return c.notFound();
+  }
+});
+
 media.get('/file/:productId/:idx?', async (c) => {
   const productId = c.req.param('productId');
   const idxParam = c.req.param('idx');
@@ -713,6 +738,31 @@ media.post('/apply-migration-0011', async (c) => {
       sql`ALTER TABLE deals ADD COLUMN IF NOT EXISTS conversation_id uuid REFERENCES conversations(id) ON DELETE SET NULL`,
     );
     return c.json({ ok: true, applied: ['deals.created_by_ai', 'deals.conversation_id'] });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 500);
+  }
+});
+
+// ── POST /media/apply-migration-0013 ─────────────────
+// Cria tabela token_usage_logs
+media.post('/apply-migration-0013', async (c) => {
+  try {
+    const { sql } = await import('drizzle-orm');
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS token_usage_logs (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+        account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        conversation_id uuid,
+        model varchar(100) NOT NULL,
+        input_tokens integer NOT NULL DEFAULT 0,
+        output_tokens integer NOT NULL DEFAULT 0,
+        total_tokens integer NOT NULL DEFAULT 0,
+        created_at timestamp with time zone DEFAULT now() NOT NULL
+      )
+    `);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS token_usage_account_idx ON token_usage_logs(account_id)`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS token_usage_created_idx ON token_usage_logs(created_at)`);
+    return c.json({ ok: true, applied: ['token_usage_logs'] });
   } catch (err) {
     return c.json({ error: (err as Error).message }, 500);
   }

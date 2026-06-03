@@ -1,6 +1,7 @@
 import { db } from '../db/client.js';
-import { contacts, ninaSettings } from '../db/schema.js';
+import { contacts, ninaSettings, tokenUsageLogs } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { resolveModelName } from './gemini-client.js';
 import { buildDaniSystemPrompt } from './dani-prompt.js';
 import { formatMemoryForPrompt, type ClientMemory } from './contact-memory.js';
 import {
@@ -48,6 +49,7 @@ export function stripFillerPrefix(text: string): { clean: string; stripped: bool
 export interface DaniContext {
   accountId: string;
   contactId?: string | null;
+  conversationId?: string | null;
   history?: ChatTurn[];
 }
 
@@ -240,6 +242,20 @@ export async function processDaniMessage(
       { rawSample: generation.text.slice(0, 200) },
       '[DANI] JSON parse fallback - prompt nao seguiu formato',
     );
+  }
+
+  // Persiste token usage (fire-and-forget)
+  if (generation.usage && ctx.accountId) {
+    db.insert(tokenUsageLogs).values({
+      accountId: ctx.accountId,
+      conversationId: ctx.conversationId ?? null,
+      model: resolveModelName(modelMode),
+      inputTokens: generation.usage.inputTokens,
+      outputTokens: generation.usage.outputTokens,
+      totalTokens: generation.usage.totalTokens,
+    }).catch((err: Error) => {
+      logger.warn({ err: err.message }, '[DANI] falha ao gravar token usage');
+    });
   }
 
   // Alerta quando DANI usa muitas iteracoes (loop de tool calls)

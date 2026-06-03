@@ -77,4 +77,16 @@ export const api = {
 
   delete: <T>(path: string) =>
     request<T>(path, { method: 'DELETE' }),
+
+  // FormData (sem Content-Type header pra browser setar boundary do multipart)
+  postForm: <T>(path: string, body: FormData) => {
+    const url = `${BASE_URL}${path}`;
+    return fetch(url, { method: 'POST', credentials: 'include', body })
+      .then(async (res) => {
+        const text = await res.text();
+        const data = text ? JSON.parse(text) : {};
+        if (!res.ok) throw new ApiError(res.status, data);
+        return data as T;
+      });
+  },
 };

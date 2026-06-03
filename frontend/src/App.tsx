@@ -16,6 +16,7 @@ import OnboardingPage from './pages/Onboarding';
 import PerfilPage from './pages/Perfil';
 import RequireAdmin from './components/RequireAdmin';
 import AdminUsersPage from './pages/AdminUsers';
+import TokenCostPage from './pages/TokenCost';
 
 export default function App() {
   return (
@@ -105,6 +106,7 @@ export default function App() {
             </RequireAdmin>
           }
         />
+        <Route path="/admin/token-cost" element={<TokenCostPage />} />
 
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
