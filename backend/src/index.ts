@@ -72,6 +72,16 @@ async function main() {
     process.exit(1);
   }
 
+  // Aplica migrações idempotentes ANTES de aceitar workers/requests.
+  // Garante que toda coluna/tabela do schema existe no banco — sem isso,
+  // um deploy novo com schema novo quebra o worker (ex: column "bia_phone").
+  try {
+    const { runStartupMigrations } = await import('./db/auto-migrate.js');
+    await runStartupMigrations();
+  } catch (err) {
+    logger.error({ err: (err as Error).message }, '[API] startup migrations falharam (continuando)');
+  }
+
   const server = serve({ fetch: app.fetch, port }, () => {
     logger.info(`[API] FCE Backend v0.1.0 on http://localhost:${port}`);
     logger.info('[API] Routes: /health /auth/* /dani/* /bling/* /whatsapp/* /crm/* /cloudinary/* /pipeline/* /appointments/* /cron/*');
