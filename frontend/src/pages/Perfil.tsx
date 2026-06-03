@@ -27,6 +27,31 @@ export default function PerfilPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileNotice, setProfileNotice] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  async function handleAvatarFile(file: File) {
+    if (!file.type.startsWith('image/')) {
+      setProfileError('Selecione uma imagem.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileError('Imagem maior que 5MB.');
+      return;
+    }
+    setUploadingAvatar(true);
+    setProfileError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.postForm<{ avatarUrl: string }>('/auth/avatar', fd);
+      setAvatarUrl(res.avatarUrl);
+      setProfileNotice('Foto atualizada!');
+    } catch (e) {
+      setProfileError(e instanceof ApiError ? e.message : 'Falha no upload');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
 
   // Trocar senha
   const [currentPassword, setCurrentPassword] = useState('');
@@ -124,11 +149,45 @@ export default function PerfilPage() {
       <div className="max-w-3xl mx-auto space-y-5">
         {/* Header identidade */}
         <div className="material p-6 flex items-center gap-5">
-          <Avatar
-            fallback={fullName || me?.user.email || '??'}
-            src={avatarUrl || null}
-            size="xl"
-          />
+          {/* Avatar clicável com overlay de upload */}
+          <label
+            className="relative shrink-0 cursor-pointer group"
+            title="Trocar foto"
+          >
+            <Avatar
+              fallback={fullName || me?.user.email || '??'}
+              src={avatarUrl || null}
+              size="xl"
+            />
+            {/* Overlay no hover */}
+            <div
+              className="absolute inset-0 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{ background: 'oklch(0 0 0 / 0.5)' }}
+            >
+              {uploadingAvatar ? (
+                <svg width="20" height="20" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              )}
+            </div>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={uploadingAvatar}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleAvatarFile(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
           <div className="flex-1">
             <h2 className="text-xl font-bold" style={{ color: 'var(--text-1)' }}>
               {fullName || me?.user.email.split('@')[0]}
@@ -211,15 +270,40 @@ export default function PerfilPage() {
               </p>
             </div>
             <div>
-              <label className="field-label">URL da foto (avatar)</label>
-              <input
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                className="input-base font-mono text-xs"
-                placeholder="https://..."
-              />
-              <p className="text-[10px] mt-1" style={{ color: 'var(--text-3)' }}>
-                Cole a URL pública de uma imagem (Cloudinary, Google Drive público, etc).
+              <label className="field-label">Foto de perfil</label>
+              <div className="flex items-center gap-3">
+                <label className="btn btn-secondary btn-sm cursor-pointer">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="17 8 12 3 7 8" />
+                    <line x1="12" y1="3" x2="12" y2="15" />
+                  </svg>
+                  {uploadingAvatar ? 'Enviando…' : avatarUrl ? 'Trocar foto' : 'Enviar foto'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploadingAvatar}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleAvatarFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+                {avatarUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setAvatarUrl('')}
+                    className="btn btn-ghost btn-sm"
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+              <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-3)' }}>
+                JPG ou PNG até 5MB. A foto é salva direto no sistema. Clique no avatar acima também funciona.
               </p>
             </div>
             <div className="flex justify-end">

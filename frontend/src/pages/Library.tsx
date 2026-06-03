@@ -47,6 +47,7 @@ export default function LibraryPage() {
     tagsRaw: '',
   });
   const [saving, setSaving] = useState(false);
+  const [pickedFile, setPickedFile] = useState<File | null>(null);
 
   useEffect(() => {
     api
@@ -81,6 +82,7 @@ export default function LibraryPage() {
   function openCreate() {
     setEditing(null);
     setShowNew(true);
+    setPickedFile(null);
     setForm({
       name: '',
       description: '',
@@ -93,6 +95,7 @@ export default function LibraryPage() {
   function openEdit(item: MediaItem) {
     setEditing(item);
     setShowNew(true);
+    setPickedFile(null);
     setForm({
       name: item.name,
       description: item.description ?? '',
@@ -104,7 +107,12 @@ export default function LibraryPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!accountId || !form.name || !form.fileUrl) return;
+    if (!accountId || !form.name) return;
+    // Criar: precisa de arquivo OU URL. Editar: campos textuais.
+    if (!editing && !pickedFile && !form.fileUrl) {
+      setError('Selecione um arquivo ou cole uma URL.');
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -112,20 +120,38 @@ export default function LibraryPage() {
         .split(',')
         .map((t) => t.trim().toLowerCase())
         .filter(Boolean);
-      const payload = {
-        accountId,
-        name: form.name,
-        description: form.description || undefined,
-        fileUrl: form.fileUrl,
-        fileType: form.fileType,
-        tags,
-      };
+
       if (editing) {
-        await api.patch(`/library/${editing.id}`, payload);
+        // Edição: só metadados (PATCH JSON)
+        await api.patch(`/library/${editing.id}`, {
+          accountId,
+          name: form.name,
+          description: form.description || undefined,
+          fileUrl: form.fileUrl,
+          fileType: form.fileType,
+          tags,
+        });
+      } else if (pickedFile) {
+        // Criar com upload direto (multipart)
+        const fd = new FormData();
+        fd.append('file', pickedFile);
+        fd.append('accountId', accountId);
+        fd.append('name', form.name);
+        if (form.description) fd.append('description', form.description);
+        await api.postForm('/library/upload', fd);
       } else {
-        await api.post('/library', payload);
+        // Criar via URL (fallback legado)
+        await api.post('/library', {
+          accountId,
+          name: form.name,
+          description: form.description || undefined,
+          fileUrl: form.fileUrl,
+          fileType: form.fileType,
+          tags,
+        });
       }
       setShowNew(false);
+      setPickedFile(null);
       await loadList();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falha ao salvar');
@@ -269,38 +295,87 @@ export default function LibraryPage() {
                     className="input-base"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs uppercase text-muted-foreground mb-1">
-                    URL pública *
-                  </label>
-                  <input
-                    type="url"
-                    value={form.fileUrl}
-                    onChange={(e) => setForm({ ...form, fileUrl: e.target.value })}
-                    required
-                    placeholder="https://..."
-                    className="input-base font-mono text-xs"
-                  />
-                  <p className="text-[10px] text-muted-foreground mt-1">
-                    Hospede no Cloudinary, S3, Google Drive (link público), etc
-                  </p>
-                </div>
-                <div>
-                  <label className="block text-xs uppercase text-muted-foreground mb-1">
-                    Tipo (MIME)
-                  </label>
-                  <select
-                    value={form.fileType}
-                    onChange={(e) => setForm({ ...form, fileType: e.target.value })}
-                    className="input-base"
-                  >
-                    <option value="application/pdf">PDF</option>
-                    <option value="image/jpeg">Imagem JPEG</option>
-                    <option value="image/png">Imagem PNG</option>
-                    <option value="video/mp4">Vídeo MP4</option>
-                    <option value="audio/mpeg">Áudio MP3</option>
-                  </select>
-                </div>
+                {/* Upload de arquivo direto (ao criar) ou URL read-only (ao editar) */}
+                {editing ? (
+                  <div>
+                    <label className="block text-xs uppercase text-muted-foreground mb-1">
+                      Arquivo
+                    </label>
+                    <a
+                      href={form.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="input-base font-mono text-xs flex items-center hover:underline"
+                      style={{ color: 'var(--primary)' }}
+                    >
+                      Ver arquivo atual ↗
+                    </a>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Pra trocar o arquivo, apague e crie um novo.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs uppercase text-muted-foreground mb-1">
+                      Arquivo *
+                    </label>
+                    <label
+                      className="flex flex-col items-center justify-center gap-2 rounded-lg cursor-pointer transition-colors py-6 px-4"
+                      style={{
+                        border: `2px dashed ${pickedFile ? 'var(--primary)' : 'var(--border-strong)'}`,
+                        background: pickedFile ? 'var(--primary-tint)' : 'var(--bg-subtle)',
+                      }}
+                    >
+                      {pickedFile ? (
+                        <>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                          </svg>
+                          <div className="text-center">
+                            <div className="text-xs font-semibold" style={{ color: 'var(--text-1)' }}>
+                              {pickedFile.name}
+                            </div>
+                            <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                              {(pickedFile.size / 1024).toFixed(0)} KB · clique pra trocar
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                          </svg>
+                          <div className="text-center">
+                            <div className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>
+                              Clique pra selecionar
+                            </div>
+                            <div className="text-[10px]" style={{ color: 'var(--text-3)' }}>
+                              PDF, imagem, vídeo ou áudio · até 25MB
+                            </div>
+                          </div>
+                        </>
+                      )}
+                      <input
+                        type="file"
+                        accept=".pdf,image/*,video/*,audio/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0];
+                          if (f) {
+                            setPickedFile(f);
+                            // Auto-preenche nome se vazio
+                            if (!form.name) {
+                              setForm((prev) => ({ ...prev, name: f.name.replace(/\.[^.]+$/, '') }));
+                            }
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs uppercase text-muted-foreground mb-1">
                     Descrição
@@ -335,10 +410,10 @@ export default function LibraryPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={saving || !form.name || !form.fileUrl}
+                    disabled={saving || !form.name || (!editing && !pickedFile && !form.fileUrl)}
                     className="px-4 py-1.5 rounded-md gradient-pink text-white text-xs font-semibold disabled:opacity-40"
                   >
-                    {saving ? 'Salvando...' : 'Salvar'}
+                    {saving ? 'Enviando...' : editing ? 'Salvar' : 'Enviar arquivo'}
                   </button>
                 </div>
               </form>

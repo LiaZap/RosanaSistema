@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import { produtosCatalogo } from '../db/schema.js';
@@ -115,30 +116,36 @@ media.get('/proxy', async (c) => {
 // ── GET /media/file/:productId/:idx? ────────────────
 // Serve imagem do MinIO. idx 0 = principal, 1+ = adicionais.
 // Se nao tem ainda, faz upload lazy de TODAS as imagens do produto.
-// ── GET /media/chat/:key — serve imagens enviadas pelo humano no chat ──
-// key vem URL-encoded: ex. chat/accountId/convId/123456.jpg
-media.get('/chat/:key{.+}', async (c) => {
-  const key = decodeURIComponent(c.req.param('key'));
-  if (!key.startsWith('chat/')) return c.notFound();
+// ── GET /media/asset/:key — serve assets do MinIO (chat, avatar, library) ──
+// key vem URL-encoded: ex. chat/accountId/convId/123.jpg, avatar/userId/123.jpg
+async function serveMinioAsset(c: Context, key: string, allowedPrefixes: string[]) {
+  if (!allowedPrefixes.some((p) => key.startsWith(p))) return c.notFound();
   try {
     const { getS3 } = await import('../lib/minio-cache.js');
     const { GetObjectCommand } = await import('@aws-sdk/client-s3');
     const bucket = process.env.MINIO_BUCKET || 'fce-media';
     const obj = await getS3().send(new GetObjectCommand({ Bucket: bucket, Key: key }));
     if (!obj.Body) return c.notFound();
-    const Readable = (await import('stream')).Readable;
     const chunks: Buffer[] = [];
     for await (const chunk of obj.Body as unknown as AsyncIterable<Buffer>) {
       chunks.push(chunk instanceof Buffer ? chunk : Buffer.from(chunk));
     }
     const buf = Buffer.concat(chunks);
-    c.header('Content-Type', obj.ContentType ?? 'image/jpeg');
-    c.header('Cache-Control', 'private, max-age=3600');
+    c.header('Content-Type', obj.ContentType ?? 'application/octet-stream');
+    c.header('Cache-Control', 'public, max-age=86400');
     return c.body(buf as unknown as ArrayBuffer);
   } catch {
     return c.notFound();
   }
-});
+}
+
+media.get('/chat/:key{.+}', async (c) =>
+  serveMinioAsset(c, decodeURIComponent(c.req.param('key')), ['chat/']),
+);
+
+media.get('/asset/:key{.+}', async (c) =>
+  serveMinioAsset(c, decodeURIComponent(c.req.param('key')), ['avatar/', 'library/', 'chat/']),
+);
 
 media.get('/file/:productId/:idx?', async (c) => {
   const productId = c.req.param('productId');

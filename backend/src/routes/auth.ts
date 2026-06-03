@@ -260,6 +260,37 @@ auth.put('/profile', requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// ── POST /auth/avatar ────────────────────────────────
+// Upload de foto de perfil direto pro MinIO. Substitui o input de URL.
+auth.post('/avatar', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.parseBody();
+  const file = body['file'];
+  if (!file || typeof file === 'string') throw new ValidationError('file required');
+
+  const f = file as File;
+  if (!f.type.startsWith('image/')) throw new ValidationError('Apenas imagens');
+  if (f.size > 5 * 1024 * 1024) throw new ValidationError('Imagem maior que 5MB');
+
+  const { uploadAssetBuffer } = await import('../lib/minio-cache.js');
+  const buffer = Buffer.from(await f.arrayBuffer());
+  const ext = f.name.split('.').pop()?.toLowerCase() ?? 'jpg';
+  const key = `avatar/${user.id}/${Date.now()}.${ext}`;
+
+  const url = await uploadAssetBuffer({ key, buffer, contentType: f.type });
+
+  // Atualiza profile
+  const [existing] = await db.select({ id: profiles.id }).from(profiles).where(eq(profiles.userId, user.id)).limit(1);
+  if (existing) {
+    await db.update(profiles).set({ avatarUrl: url, updatedAt: new Date() }).where(eq(profiles.userId, user.id));
+  } else {
+    await db.insert(profiles).values({ userId: user.id, avatarUrl: url });
+  }
+
+  logger.info({ userId: user.id, key }, '[Auth] avatar enviado');
+  return c.json({ ok: true, avatarUrl: url });
+});
+
 // ── PUT /auth/password ───────────────────────────────
 const passwordSchema = z.object({
   currentPassword: z.string().min(1, 'Senha atual obrigatória'),

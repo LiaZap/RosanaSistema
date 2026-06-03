@@ -90,6 +90,50 @@ media.post('/', requireAuth, async (c) => {
   return c.json({ item: created });
 });
 
+// ── POST /media/upload ──────────────────────────────
+// Upload de arquivo (PDF/imagem/video) direto pro MinIO + cria registro.
+media.post('/upload', requireAuth, async (c) => {
+  const user = getUser(c);
+  const body = await c.req.parseBody();
+  const file = body['file'];
+  const accountId = typeof body['accountId'] === 'string' ? body['accountId'] : '';
+  const name = typeof body['name'] === 'string' ? body['name'] : '';
+  const description = typeof body['description'] === 'string' ? body['description'] : undefined;
+
+  if (!file || typeof file === 'string') throw new ValidationError('file required');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertOwnerOrAdmin(user.id, accountId);
+
+  const f = file as File;
+  if (f.size > 25 * 1024 * 1024) throw new ValidationError('Arquivo maior que 25MB');
+
+  const { uploadAssetBuffer } = await import('../lib/minio-cache.js');
+  const buffer = Buffer.from(await f.arrayBuffer());
+  const ext = f.name.split('.').pop()?.toLowerCase() ?? 'bin';
+  const safeName = f.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const key = `library/${accountId}/${Date.now()}_${safeName}`;
+
+  const fileUrl = await uploadAssetBuffer({ key, buffer, contentType: f.type || 'application/octet-stream' });
+
+  const finalName = name || f.name.replace(/\.[^.]+$/, '');
+  const [created] = await db
+    .insert(mediaLibrary)
+    .values({
+      accountId,
+      name: finalName,
+      description: description || null,
+      fileUrl,
+      fileType: f.type || `application/${ext}`,
+      fileSize: f.size,
+      nameNormalized: normalizeForSearch(finalName),
+      uploadedBy: user.id,
+    })
+    .returning();
+
+  logger.info({ id: created.id, name: created.name, key }, '[Media] arquivo enviado direto');
+  return c.json({ item: created });
+});
+
 // ── PATCH /media/:id ────────────────────────────────
 media.patch('/:id', requireAuth, async (c) => {
   const user = getUser(c);

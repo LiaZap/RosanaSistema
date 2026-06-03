@@ -51,6 +51,29 @@ export function buildProductImageKey(
 }
 
 /**
+ * Sobe um Buffer arbitrario pro MinIO numa key especifica.
+ * Usado por uploads do usuario (avatar, biblioteca, chat).
+ * Retorna a URL publica (servida por /media/asset/:key).
+ */
+export async function uploadAssetBuffer(opts: {
+  key: string;
+  buffer: Buffer;
+  contentType: string;
+}): Promise<string> {
+  const bucket = process.env.MINIO_BUCKET || 'fce-media';
+  await getS3().send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: opts.key,
+      Body: opts.buffer,
+      ContentType: opts.contentType,
+    }),
+  );
+  const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
+  return `${API_BASE}/media/asset/${encodeURIComponent(opts.key)}`;
+}
+
+/**
  * Tenta baixar imagem com User-Agent comum. Retorna Response ou null.
  */
 async function tryDownload(imageUrl: string): Promise<Response | null> {
