@@ -102,6 +102,8 @@ export default function ConversationDetailPage({
   const endRef = useRef<HTMLDivElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const nearBottomRef = useRef(true);
+  const initialScrollDoneRef = useRef(false); // ja fez o scroll inicial pro fim?
+  const prependingRef = useRef(false); // loadOlder esta prependendo (nao scrollar pro fim)
 
   // Quick actions: modais de Deal e Appointment
   const [showDealModal, setShowDealModal] = useState(false);
@@ -170,9 +172,11 @@ export default function ConversationDetailPage({
       const data = await api.get<OlderMessagesResponse>(
         `/crm/conversations/${conversationId}/messages?accountId=${accountId}&before=${encodeURIComponent(oldest.createdAt)}&limit=30`,
       );
+      prependingRef.current = true; // sinaliza pro effect NAO scrollar pro fim
       setMessages((prev) => {
         const ids = new Set(prev.map((m) => m.id));
         const older = data.messages.filter((m) => !ids.has(m.id));
+        if (older.length === 0) return prev;
         return [...older, ...prev];
       });
       setHasMore(data.hasMore);
@@ -194,6 +198,8 @@ export default function ConversationDetailPage({
     setMessages([]);
     setHasMore(false);
     nearBottomRef.current = true;
+    initialScrollDoneRef.current = false;
+    prependingRef.current = false;
     setLoading(true);
     loadDetail(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,17 +213,40 @@ export default function ConversationDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, conversationId]);
 
-  // Scroll pro fim so quando o usuario ja esta perto do fim
-  // (nao puxa pra baixo quando esta lendo mensagens antigas)
+  // Gerencia o scroll quando a lista de mensagens muda.
+  // - Primeira carga: pula direto pro FIM (instantaneo, scrollTop = scrollHeight)
+  // - Prepend (loadOlder): NAO mexe (o loadOlder restaura a posicao via rAF)
+  // - Nova msg do poll: scrolla pro fim SO se o usuario ja estava perto do fim
   useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) return;
+
+    if (!initialScrollDoneRef.current) {
+      el.scrollTop = el.scrollHeight;
+      initialScrollDoneRef.current = true;
+      nearBottomRef.current = true;
+      // Reforca apos o layout estabilizar (imagens dos cards mudam a altura)
+      requestAnimationFrame(() => {
+        if (scrollRef.current && nearBottomRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+      return;
+    }
+    if (prependingRef.current) {
+      prependingRef.current = false; // loadOlder cuida da posicao
+      return;
+    }
     if (nearBottomRef.current) {
-      endRef.current?.scrollIntoView({ behavior: 'auto' });
+      el.scrollTop = el.scrollHeight;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
+    // Nao reage a scroll antes do scroll inicial (evita loop de loadOlder no mount)
+    if (!initialScrollDoneRef.current) return;
     nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     if (el.scrollTop < 60 && hasMore && !loadingOlder) {
       loadOlder();
