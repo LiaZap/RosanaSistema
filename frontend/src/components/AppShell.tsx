@@ -184,7 +184,7 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
     });
 
   return (
-    <div className="min-h-screen bg-background flex">
+    <div className="h-screen overflow-hidden bg-background flex">
       {/* Sidebar overlay (mobile) */}
       {mobileOpen && (
         <div
@@ -289,9 +289,9 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 min-h-0 h-screen">
         {/* Topbar */}
-        <header className="h-14 sticky top-0 z-20 bg-background/95 backdrop-blur border-b border-border flex items-center px-4 lg:px-6 gap-3">
+        <header className="h-14 shrink-0 z-20 bg-background/95 backdrop-blur border-b border-border flex items-center px-4 lg:px-6 gap-3">
           {/* Mobile menu button */}
           <button
             onClick={() => setMobileOpen(true)}
