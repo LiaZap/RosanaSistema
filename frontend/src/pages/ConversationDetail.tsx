@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
@@ -213,24 +213,28 @@ export default function ConversationDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, conversationId]);
 
-  // Gerencia o scroll quando a lista de mensagens muda.
-  // - Primeira carga: pula direto pro FIM (instantaneo, scrollTop = scrollHeight)
-  // - Prepend (loadOlder): NAO mexe (o loadOlder restaura a posicao via rAF)
+  // Gerencia o scroll quando a lista de mensagens muda ou o loading termina.
+  // useLayoutEffect roda ANTES do paint -> o scroll ja aparece no lugar certo
+  // (sem flash no topo).
+  // - Primeira carga: pula direto pro FIM (scrollTop = scrollHeight) com duplo
+  //   requestAnimationFrame de reforco pra cobrir layout assincrono
+  // - Prepend (loadOlder): NAO mexe (o loadOlder restaura a posicao)
   // - Nova msg do poll: scrolla pro fim SO se o usuario ja estava perto do fim
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (loading) return;
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
 
+    const toBottom = () => {
+      if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    };
+
     if (!initialScrollDoneRef.current) {
-      el.scrollTop = el.scrollHeight;
       initialScrollDoneRef.current = true;
       nearBottomRef.current = true;
-      // Reforca apos o layout estabilizar (imagens dos cards mudam a altura)
-      requestAnimationFrame(() => {
-        if (scrollRef.current && nearBottomRef.current) {
-          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      });
+      toBottom();
+      requestAnimationFrame(toBottom);
+      requestAnimationFrame(() => requestAnimationFrame(toBottom));
       return;
     }
     if (prependingRef.current) {
@@ -238,10 +242,10 @@ export default function ConversationDetailPage({
       return;
     }
     if (nearBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
+      toBottom();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  }, [messages.length, loading]);
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
