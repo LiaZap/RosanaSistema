@@ -500,23 +500,30 @@ crm.get('/dashboard', requireAuth, async (c) => {
         return row?.avg_ms ?? 0;
       }),
 
-    // Top 5 produtos: maior estoque (proxy de mais vendidos)
-    // Sem filtro `disponivel` (sync nao popula corretamente esse flag)
+    // TODOS os produtos: ordenados por estoque desc (proxy de popularidade).
+    // Sem limite - frontend faz scroll.
     db
       .execute(
         sql`
-          SELECT nome, estoque
+          SELECT nome, estoque, preco, preco_promocional, codigo
           FROM produtos_catalogo
           WHERE account_id = ${accountId}
             AND estoque IS NOT NULL
             AND estoque > 0
           ORDER BY estoque DESC
-          LIMIT 5
+          LIMIT 200
         `,
       )
       .then((r) => {
-        const rows = (r as unknown as { rows: Array<{ nome: string; estoque: number }> }).rows;
-        return rows.map((row) => ({ name: row.nome, count: row.estoque }));
+        const rows = (r as unknown as {
+          rows: Array<{ nome: string; estoque: number; preco: string | null; preco_promocional: string | null; codigo: string | null }>
+        }).rows;
+        return rows.map((row) => ({
+          name: row.nome,
+          count: row.estoque,
+          preco: row.preco_promocional ? Number(row.preco_promocional) : row.preco ? Number(row.preco) : null,
+          codigo: row.codigo ?? null,
+        }));
       })
       .catch(() => []),
   ]);

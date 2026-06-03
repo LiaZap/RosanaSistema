@@ -31,7 +31,7 @@ interface DashboardKpis {
   produtosTotal: number;
   aiPerformance: { nina: number; human: number; total: number; autonomyPct: number };
   avgResponseMs: number;
-  topProducts: Array<{ name: string; count: number }>;
+  topProducts: Array<{ name: string; count: number; preco: number | null; codigo: string | null }>;
   funnel?: {
     contatos: number;
     qualificados: number;
@@ -288,7 +288,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Volume + Top produtos lado a lado */}
+          {/* Volume + Catálogo produtos lado a lado */}
           {kpis && (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
               {/* Volume 7d (col-span-2) */}
@@ -297,39 +297,60 @@ export default function DashboardPage() {
                 subtitle="Mensagens recebidas + enviadas"
                 className="lg:col-span-2"
               >
-                <div className="card-elev p-5">
-                  <div className="flex items-end gap-3 h-44">
+                <div
+                  className="rounded-xl p-5"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--sh-sm)',
+                  }}
+                >
+                  <div className="flex items-end gap-2 h-44">
                     {kpis.messagesLast7Days.length === 0 ? (
-                      <div className="flex-1 text-center text-sm text-muted-foreground self-center">
+                      <div
+                        className="flex-1 text-center text-sm self-center"
+                        style={{ color: 'var(--text-3)' }}
+                      >
                         Sem dados ainda
                       </div>
                     ) : (
                       kpis.messagesLast7Days.map((d) => {
-                        const h = Math.max(4, (d.count / max7d) * 100);
-                        const date = new Date(d.day);
+                        const h = Math.max(6, (d.count / max7d) * 100);
+                        const date = new Date(d.day + 'T12:00:00');
                         const isToday = date.toDateString() === new Date().toDateString();
                         return (
                           <div
                             key={d.day}
                             className="flex-1 flex flex-col items-center gap-1.5 group"
                           >
-                            <div className="text-xs font-semibold text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* Tooltip */}
+                            <div
+                              className="text-[11px] font-bold opacity-0 group-hover:opacity-100 transition-opacity"
+                              style={{ color: 'var(--text-1)' }}
+                            >
                               {d.count}
                             </div>
-                            <div className="w-full rounded-md relative overflow-hidden flex items-end">
+                            {/* Barra */}
+                            <div className="w-full flex-1 flex items-end">
                               <div
-                                className={`w-full rounded-md transition-all group-hover:brightness-125 ${
-                                  isToday
-                                    ? 'gradient-pink'
-                                    : 'bg-gradient-to-t from-primary/40 to-primary/10'
-                                }`}
-                                style={{ height: `${h}%`, minHeight: '8px' }}
+                                className="w-full rounded-t-md transition-all duration-300 group-hover:brightness-110"
+                                style={{
+                                  height: `${h}%`,
+                                  minHeight: 8,
+                                  background: isToday
+                                    ? 'linear-gradient(to top, oklch(0.55 0.16 350), oklch(0.65 0.18 340))'
+                                    : 'linear-gradient(to top, var(--primary), oklch(from var(--primary) l c h / 0.45))',
+                                  borderRadius: '6px 6px 2px 2px',
+                                }}
                               />
                             </div>
+                            {/* Label data */}
                             <div
-                              className={`text-[10px] ${
-                                isToday ? 'text-foreground font-semibold' : 'text-muted-foreground'
-                              }`}
+                              className="text-[10px] font-medium"
+                              style={{
+                                color: isToday ? 'var(--primary-text)' : 'var(--text-3)',
+                                fontWeight: isToday ? 700 : 400,
+                              }}
                             >
                               {date.getDate()}/{date.getMonth() + 1}
                             </div>
@@ -341,26 +362,104 @@ export default function DashboardPage() {
                 </div>
               </Section>
 
-              {/* Top produtos */}
-              <Section title="Top produtos" subtitle="Mais estoque disponível">
-                <div className="card-elev p-4">
+              {/* Catálogo completo com scroll */}
+              <Section
+                title="Catálogo em estoque"
+                subtitle={`${kpis.topProducts.length} produtos disponíveis · ordenado por estoque`}
+              >
+                <div
+                  className="rounded-xl"
+                  style={{
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    boxShadow: 'var(--sh-sm)',
+                    overflow: 'hidden',
+                  }}
+                >
                   {kpis.topProducts.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-6">
-                      Sem produtos disponíveis
+                    <p
+                      className="text-xs text-center py-6"
+                      style={{ color: 'var(--text-3)' }}
+                    >
+                      Nenhum produto com estoque. Sincronize o Bling.
                     </p>
                   ) : (
-                    <ul className="space-y-2.5">
-                      {kpis.topProducts.map((p, i) => (
-                        <li key={p.name} className="flex items-center gap-2.5 text-sm">
-                          <span className="w-5 h-5 rounded-md bg-primary/10 text-primary text-[10px] font-bold flex items-center justify-center shrink-0">
-                            {i + 1}
-                          </span>
-                          <span className="flex-1 truncate text-foreground">{p.name}</span>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {p.count}
-                          </span>
-                        </li>
-                      ))}
+                    <ul
+                      className="divide-y"
+                      style={{
+                        maxHeight: 220,
+                        overflowY: 'auto',
+                        borderColor: 'var(--border)',
+                      }}
+                    >
+                      {kpis.topProducts.map((p, i) => {
+                        // Barra de estoque relativa ao maior
+                        const maxStock = kpis.topProducts[0]?.count ?? 1;
+                        const pct = Math.max(4, Math.round((p.count / maxStock) * 100));
+                        return (
+                          <li
+                            key={`${p.name}-${i}`}
+                            className="flex items-center gap-2.5 px-3 py-2.5 group"
+                            style={{ borderColor: 'var(--border)' }}
+                          >
+                            {/* Rank */}
+                            <span
+                              className="text-[10px] font-bold tabular-nums w-4 shrink-0 text-right"
+                              style={{ color: i < 3 ? 'var(--primary)' : 'var(--text-3)' }}
+                            >
+                              {i + 1}
+                            </span>
+
+                            {/* Nome + barra */}
+                            <div className="flex-1 min-w-0">
+                              <div
+                                className="text-[12.5px] font-medium truncate leading-tight"
+                                style={{ color: 'var(--text-1)' }}
+                                title={p.name}
+                              >
+                                {p.name}
+                              </div>
+                              {/* Mini progress bar */}
+                              <div
+                                className="mt-1 h-1 rounded-full overflow-hidden"
+                                style={{ background: 'var(--bg-sunken)' }}
+                              >
+                                <div
+                                  className="h-full rounded-full transition-all"
+                                  style={{
+                                    width: `${pct}%`,
+                                    background: i < 3
+                                      ? 'var(--primary)'
+                                      : 'var(--border-strong)',
+                                  }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Estoque + preço */}
+                            <div className="text-right shrink-0">
+                              <div
+                                className="text-[11px] font-bold tabular-nums"
+                                style={{ color: 'var(--text-1)' }}
+                              >
+                                {p.count}
+                              </div>
+                              {p.preco != null && (
+                                <div
+                                  className="text-[10px] tabular-nums"
+                                  style={{ color: 'var(--text-3)' }}
+                                >
+                                  {new Intl.NumberFormat('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                    maximumFractionDigits: 0,
+                                  }).format(p.preco)}
+                                </div>
+                              )}
+                            </div>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </div>
