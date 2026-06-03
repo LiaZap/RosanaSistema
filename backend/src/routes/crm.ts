@@ -153,19 +153,26 @@ crm.get('/conversations/:id', requireAuth, async (c) => {
     where: eq(contacts.id, conv.contactId),
   });
 
+  // Carrega as ULTIMAS N mensagens (default 30). Pra carregar antigas,
+  // o frontend usa GET /conversations/:id/messages?before=<iso>.
+  const pageSize = Math.min(Number(c.req.query('limit') ?? 30), 100);
   const rows = await db
     .select({
       id: messages.id,
       fromType: messages.fromType,
       content: messages.content,
       messageType: messages.messageType,
+      mediaUrl: messages.mediaUrl,
       createdAt: messages.createdAt,
       processedByNina: messages.processedByNina,
     })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.createdAt))
-    .limit(100);
+    .limit(pageSize + 1); // +1 pra detectar se ha mais
+
+  const hasMore = rows.length > pageSize;
+  if (hasMore) rows.pop(); // remove o sentinela
 
   // Pega info extra de follow-up
   const [convFull] = await db
@@ -207,7 +214,48 @@ crm.get('/conversations/:id', requireAuth, async (c) => {
       sentiment: convFull?.sentiment ?? null,
     },
     messages: rows.reverse(),
+    hasMore,
   });
+});
+
+// ── GET /crm/conversations/:id/messages ─────────────
+// Paginacao de mensagens ANTIGAS. ?before=<iso>&limit=30
+// Retorna mensagens com createdAt < before, em ordem ascendente, + hasMore.
+crm.get('/conversations/:id/messages', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  await assertConversationInAccount(conversationId, accountId);
+
+  const before = c.req.query('before');
+  const pageSize = Math.min(Number(c.req.query('limit') ?? 30), 100);
+
+  const where = before
+    ? and(eq(messages.conversationId, conversationId), sql`${messages.createdAt} < ${new Date(before)}`)
+    : eq(messages.conversationId, conversationId);
+
+  const rows = await db
+    .select({
+      id: messages.id,
+      fromType: messages.fromType,
+      content: messages.content,
+      messageType: messages.messageType,
+      mediaUrl: messages.mediaUrl,
+      createdAt: messages.createdAt,
+      processedByNina: messages.processedByNina,
+    })
+    .from(messages)
+    .where(where)
+    .orderBy(desc(messages.createdAt))
+    .limit(pageSize + 1);
+
+  const hasMore = rows.length > pageSize;
+  if (hasMore) rows.pop();
+
+  return c.json({ messages: rows.reverse(), hasMore });
 });
 
 // ── PATCH /crm/conversations/:id ────────────────────

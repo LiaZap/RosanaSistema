@@ -15,6 +15,7 @@ interface Message {
   fromType: 'user' | 'nina' | 'human';
   content: string | null;
   messageType: string;
+  mediaUrl?: string | null;
   createdAt: string;
   processedByNina: boolean;
 }
@@ -33,6 +34,12 @@ interface Conversation {
 interface DetailResponse {
   conversation: Conversation;
   messages: Message[];
+  hasMore?: boolean;
+}
+
+interface OlderMessagesResponse {
+  messages: Message[];
+  hasMore: boolean;
 }
 
 interface Analysis {
@@ -85,11 +92,16 @@ export default function ConversationDetailPage({
   const [me, setMe] = useState<MeResponse | null>(null);
   const [accountId, setAccountId] = useState<string>('');
   const [detail, setDetail] = useState<DetailResponse | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
 
   // Quick actions: modais de Deal e Appointment
   const [showDealModal, setShowDealModal] = useState(false);
@@ -122,13 +134,24 @@ export default function ConversationDetailPage({
       });
   }, [navigate]);
 
-  async function loadDetail() {
+  async function loadDetail(initial = false) {
     if (!accountId || !conversationId) return;
     try {
       const data = await api.get<DetailResponse>(
         `/crm/conversations/${conversationId}?accountId=${accountId}`,
       );
       setDetail(data);
+      if (initial) {
+        setMessages(data.messages);
+        setHasMore(!!data.hasMore);
+      } else {
+        // Poll: mescla so mensagens novas no fim (preserva antigas carregadas)
+        setMessages((prev) => {
+          const ids = new Set(prev.map((m) => m.id));
+          const incoming = data.messages.filter((m) => !ids.has(m.id));
+          return incoming.length ? [...prev, ...incoming] : prev;
+        });
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falha ao carregar');
     } finally {
@@ -136,22 +159,70 @@ export default function ConversationDetailPage({
     }
   }
 
+  // Carrega mensagens ANTIGAS (scroll pra cima). Preserva posicao do scroll.
+  async function loadOlder() {
+    const el = scrollRef.current;
+    if (!el || loadingOlder || !hasMore || messages.length === 0 || !accountId || !conversationId) return;
+    setLoadingOlder(true);
+    const oldest = messages[0]!;
+    const prevHeight = el.scrollHeight;
+    try {
+      const data = await api.get<OlderMessagesResponse>(
+        `/crm/conversations/${conversationId}/messages?accountId=${accountId}&before=${encodeURIComponent(oldest.createdAt)}&limit=30`,
+      );
+      setMessages((prev) => {
+        const ids = new Set(prev.map((m) => m.id));
+        const older = data.messages.filter((m) => !ids.has(m.id));
+        return [...older, ...prev];
+      });
+      setHasMore(data.hasMore);
+      // Restaura posicao: mantem a mensagem que estava no topo visivel
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevHeight;
+        }
+      });
+    } catch {
+      // ignore
+    } finally {
+      setLoadingOlder(false);
+    }
+  }
+
+  // Carga inicial (reseta ao trocar de conversa)
   useEffect(() => {
-    loadDetail();
+    setMessages([]);
+    setHasMore(false);
+    nearBottomRef.current = true;
+    setLoading(true);
+    loadDetail(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, conversationId]);
 
-  // Auto refresh
+  // Auto refresh (poll mescla novas)
   useEffect(() => {
     if (!accountId || !conversationId) return;
-    const interval = setInterval(() => loadDetail(), 8000);
+    const interval = setInterval(() => loadDetail(false), 8000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, conversationId]);
 
+  // Scroll pro fim so quando o usuario ja esta perto do fim
+  // (nao puxa pra baixo quando esta lendo mensagens antigas)
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [detail?.messages.length]);
+    if (nearBottomRef.current) {
+      endRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (el.scrollTop < 60 && hasMore && !loadingOlder) {
+      loadOlder();
+    }
+  }
 
   async function changeStatus(status: Conversation['status']) {
     if (!accountId || !conversationId) return;
@@ -328,7 +399,7 @@ export default function ConversationDetailPage({
     );
   }
 
-  const { conversation, messages } = detail;
+  const { conversation } = detail;
   const isHumanMode = conversation.status === 'human';
   const isClosed = conversation.status === 'closed';
 
@@ -444,8 +515,33 @@ export default function ConversationDetailPage({
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4" style={{ background: 'var(--bg-app)' }}>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto p-4"
+        style={{ background: 'var(--bg-app)' }}
+      >
         <div className="max-w-3xl mx-auto flex flex-col gap-3">
+          {/* Indicador de carregar mais (topo) */}
+          {hasMore && (
+            <div className="flex justify-center py-2">
+              {loadingOlder ? (
+                <span className="text-[11px] flex items-center gap-1.5" style={{ color: 'var(--text-3)' }}>
+                  <svg width="12" height="12" className="animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeOpacity="0.3" /><path d="M12 2a10 10 0 0 1 10 10" /></svg>
+                  carregando mensagens antigas…
+                </span>
+              ) : (
+                <button
+                  onClick={loadOlder}
+                  className="text-[11px] px-3 py-1 rounded-full transition-colors"
+                  style={{ background: 'var(--bg-subtle)', color: 'var(--text-2)', border: '1px solid var(--border)' }}
+                >
+                  ↑ carregar mensagens anteriores
+                </button>
+              )}
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="text-center text-sm py-16" style={{ color: 'var(--text-3)' }}>
               <p>Nenhuma mensagem ainda</p>

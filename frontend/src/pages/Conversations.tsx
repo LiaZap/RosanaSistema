@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
@@ -106,6 +106,11 @@ export default function ConversationsPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Paginação da lista (infinite scroll por crescimento de limite)
+  const [listLimit, setListLimit] = useState(40);
+  const [listHasMore, setListHasMore] = useState(false);
+  const listLimitRef = useRef(40);
+  useEffect(() => { listLimitRef.current = listLimit; }, [listLimit]);
 
   useEffect(() => {
     api
@@ -125,10 +130,13 @@ export default function ConversationsPage() {
     try {
       const statusQ = filter === 'all' ? '' : `&status=${filter}`;
       const daysQ = `&days=${period}`;
+      const lim = listLimitRef.current;
       const data = await api.get<{ conversations: ConversationRow[] }>(
-        `/crm/conversations?accountId=${accountId}${statusQ}${daysQ}`,
+        `/crm/conversations?accountId=${accountId}${statusQ}${daysQ}&limit=${lim}`,
       );
       setConversations(data.conversations);
+      // Se veio a página cheia, provavelmente há mais (até o cap de 200)
+      setListHasMore(data.conversations.length >= lim && lim < 200);
       const s = await api.get<Stats>(`/crm/stats?accountId=${accountId}`);
       setStats(s);
     } catch {
@@ -138,10 +146,17 @@ export default function ConversationsPage() {
     }
   }
 
+  // Reset paginação ao trocar filtro/período
+  useEffect(() => {
+    setListLimit(40);
+    listLimitRef.current = 40;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, period]);
+
   useEffect(() => {
     loadList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, filter, period]);
+  }, [accountId, filter, period, listLimit]);
 
   useEffect(() => {
     if (!accountId) return;
@@ -149,6 +164,18 @@ export default function ConversationsPage() {
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId, filter]);
+
+  // Infinite scroll: ao chegar perto do fim da lista, aumenta o limite
+  function handleListScroll(e: React.UIEvent<HTMLDivElement>) {
+    const el = e.currentTarget;
+    if (
+      listHasMore &&
+      !loading &&
+      el.scrollHeight - el.scrollTop - el.clientHeight < 200
+    ) {
+      setListLimit((l) => Math.min(l + 40, 200));
+    }
+  }
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -252,7 +279,10 @@ export default function ConversationsPage() {
           </div>
 
           {/* Lista scrollável */}
-          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 min-h-0">
+          <div
+            onScroll={handleListScroll}
+            className="flex-1 overflow-y-auto px-2 py-2 space-y-1 min-h-0"
+          >
             {loading && conversations.length === 0 && (
               <div className="space-y-1.5">
                 {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="skeleton h-16 rounded-xl" />)}
@@ -366,6 +396,13 @@ export default function ConversationsPage() {
                 </button>
               );
             })}
+
+            {/* Indicador de paginação */}
+            {listHasMore && filtered.length > 0 && (
+              <div className="text-center py-3 text-[11px]" style={{ color: 'var(--text-3)' }}>
+                {loading ? 'carregando…' : 'role pra ver mais'}
+              </div>
+            )}
           </div>
         </div>
 
