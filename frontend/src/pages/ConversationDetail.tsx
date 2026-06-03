@@ -70,9 +70,18 @@ const STATUS_DOT: Record<Conversation['status'], string> = {
   closed: 'bg-muted-foreground',
 };
 
-export default function ConversationDetailPage() {
+export default function ConversationDetailPage({
+  idProp,
+  embedded = false,
+  onBack,
+}: {
+  idProp?: string;
+  embedded?: boolean;
+  onBack?: () => void;
+} = {}) {
   const navigate = useNavigate();
-  const { id: conversationId } = useParams<{ id: string }>();
+  const params = useParams<{ id: string }>();
+  const conversationId = idProp ?? params.id;
   const [me, setMe] = useState<MeResponse | null>(null);
   const [accountId, setAccountId] = useState<string>('');
   const [detail, setDetail] = useState<DetailResponse | null>(null);
@@ -245,22 +254,77 @@ export default function ConversationDetailPage() {
     }
   }
 
+  // Frame: em modo embedded renderiza painel simples (sem AppShell, pra
+  // viver dentro do split-pane de Conversas). Senao usa AppShell completo.
+  const Frame = ({
+    title,
+    subtitle,
+    actions,
+    children,
+  }: {
+    title: string;
+    subtitle?: string;
+    actions?: React.ReactNode;
+    children: React.ReactNode;
+  }) => {
+    if (!embedded) {
+      return (
+        <AppShell title={title} subtitle={subtitle} actions={actions} bare>
+          {children}
+        </AppShell>
+      );
+    }
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div
+          className="flex items-center gap-3 px-4 py-2.5 border-b shrink-0"
+          style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}
+        >
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="lg:hidden btn btn-ghost btn-sm px-2 py-1 shrink-0"
+              aria-label="Voltar"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
+            </button>
+          )}
+          {detail?.conversation.contact && (
+            <Avatar fallback={detail.conversation.contact.name ?? detail.conversation.contact.phoneNumber} size="md" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-semibold truncate" style={{ color: 'var(--text-1)' }}>
+              {title}
+            </div>
+            {subtitle && (
+              <div className="text-[11px] font-mono truncate" style={{ color: 'var(--text-3)' }}>
+                {subtitle}
+              </div>
+            )}
+          </div>
+          {actions}
+        </div>
+        {children}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
-      <AppShell title="Conversa" bare>
+      <Frame title="Conversa">
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
           Carregando...
         </div>
-      </AppShell>
+      </Frame>
     );
   }
   if (!detail) {
     return (
-      <AppShell title="Conversa nao encontrada" bare>
+      <Frame title="Conversa nao encontrada">
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
           Conversa nao encontrada
         </div>
-      </AppShell>
+      </Frame>
     );
   }
 
@@ -269,7 +333,7 @@ export default function ConversationDetailPage() {
   const isClosed = conversation.status === 'closed';
 
   return (
-    <AppShell
+    <Frame
       title={conversation.contact?.name ?? conversation.contact?.phoneNumber ?? 'Conversa'}
       subtitle={conversation.contact?.phoneNumber}
       actions={
@@ -306,7 +370,6 @@ export default function ConversationDetailPage() {
           </button>
         </div>
       }
-      bare
     >
       {/* Action bar */}
       <div className="border-b border-border bg-card/30 backdrop-blur-sm sticky top-0 z-10">
@@ -864,7 +927,7 @@ export default function ConversationDetailPage() {
           </form>
         </div>
       </div>
-    </AppShell>
+    </Frame>
   );
 }
 

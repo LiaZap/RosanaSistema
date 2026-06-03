@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import { Avatar } from '../components/ui/avatar';
+import ConversationDetailPage from './ConversationDetail';
 
 interface MeResponse {
   user: { id: string; email: string };
@@ -56,6 +57,18 @@ const FILTERS: Array<{
   { key: 'closed', label: 'Fechadas', dot: 'var(--text-3)' },
 ];
 
+// Cards de estatística no topo da lista (estilo FCE Studio)
+const STAT_CARDS: Array<{
+  key: 'all' | 'nina' | 'human' | 'closed';
+  label: string;
+  color: string;
+}> = [
+  { key: 'all', label: 'TOTAL', color: 'var(--text-1)' },
+  { key: 'nina', label: 'DANI', color: 'var(--dani)' },
+  { key: 'human', label: 'HUMANO', color: 'var(--success)' },
+  { key: 'closed', label: 'FECHADO', color: 'var(--text-3)' },
+];
+
 function timeAgo(date: string | null): string {
   if (!date) return '—';
   const ms = Date.now() - new Date(date).getTime();
@@ -92,6 +105,7 @@ export default function ConversationsPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -147,268 +161,244 @@ export default function ConversationsPage() {
     );
   }, [conversations, search]);
 
-  const countFor = (k: typeof FILTERS[number]['key']) => {
+  const countFor = (k: 'all' | 'nina' | 'human' | 'paused' | 'closed') => {
     if (!stats) return 0;
     return k === 'all' ? stats.total : stats[k];
   };
 
   return (
-    <AppShell
-      title="Conversas"
-      subtitle={`${conversations.length} conversa${conversations.length === 1 ? '' : 's'} · atualiza a cada 15s`}
-      bare
-    >
-      {/* Toolbar — filtros chip + search */}
-      <div
-        className="border-b sticky top-0 z-10"
-        style={{ borderColor: 'var(--border)', background: 'var(--bg-app)' }}
-      >
-        <div className="px-5 py-3 flex flex-wrap items-center gap-3">
-          {/* Filtros chip */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {FILTERS.map((f) => {
-              const active = filter === f.key;
+    <AppShell title="Conversas" subtitle={`${conversations.length} conversas · atualiza a cada 15s`} bare>
+      <div className="flex flex-1 min-h-0">
+        {/* ─── LEFT: lista ─────────────────────────── */}
+        <div
+          className={`w-full lg:w-[400px] shrink-0 flex-col min-h-0 border-r ${selectedId ? 'hidden lg:flex' : 'flex'}`}
+          style={{ borderColor: 'var(--border)' }}
+        >
+          {/* Stats cards */}
+          <div className="grid grid-cols-4 gap-1.5 px-3 pt-3 pb-2">
+            {STAT_CARDS.map((s) => {
+              const active = filter === s.key;
               return (
                 <button
-                  key={f.key}
-                  onClick={() => setFilter(f.key)}
-                  className="text-[12.5px] font-medium px-3 py-1.5 rounded-full transition-all flex items-center gap-1.5"
+                  key={s.key}
+                  onClick={() => setFilter(s.key)}
+                  className="rounded-lg px-2 py-2 text-left transition-all"
                   style={{
-                    background: active ? 'var(--primary-tint)' : 'transparent',
-                    color: active ? 'var(--primary-text)' : 'var(--text-2)',
+                    background: active ? 'var(--primary-tint)' : 'var(--bg-surface)',
                     border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
                   }}
                 >
-                  {f.dot && (
-                    <span
-                      className="w-1.5 h-1.5 rounded-full"
-                      style={{ background: f.dot }}
-                    />
-                  )}
-                  <span>{f.label}</span>
-                  <span
-                    className="ml-0.5 text-[10.5px] font-semibold tabular-nums"
-                    style={{ color: active ? 'var(--primary-text)' : 'var(--text-3)' }}
-                  >
-                    {countFor(f.key)}
-                  </span>
+                  <div className="text-[18px] font-bold tabular-nums leading-none" style={{ color: s.color }}>
+                    {countFor(s.key)}
+                  </div>
+                  <div className="text-[9px] font-semibold uppercase tracking-wider mt-1" style={{ color: 'var(--text-3)' }}>
+                    {s.label}
+                  </div>
                 </button>
               );
             })}
           </div>
 
-          {/* Período */}
-          <div className="flex items-center gap-1 ml-2">
-            {PERIOD_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setPeriod(opt.value)}
-                className="text-[12px] font-medium px-2.5 py-1.5 rounded-full transition-all"
-                style={{
-                  background: period === opt.value ? 'var(--bg-subtle)' : 'transparent',
-                  color: period === opt.value ? 'var(--text-1)' : 'var(--text-3)',
-                  border: `1px solid ${period === opt.value ? 'var(--border-strong)' : 'transparent'}`,
-                }}
+          {/* Toolbar: filtros + período + busca */}
+          <div className="px-3 pb-2 space-y-2 border-b" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-1 flex-wrap">
+              {FILTERS.map((f) => {
+                const active = filter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setFilter(f.key)}
+                    className="text-[11.5px] font-medium px-2.5 py-1 rounded-full transition-all flex items-center gap-1"
+                    style={{
+                      background: active ? 'var(--primary-tint)' : 'transparent',
+                      color: active ? 'var(--primary-text)' : 'var(--text-2)',
+                      border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                    }}
+                  >
+                    {f.dot && <span className="w-1.5 h-1.5 rounded-full" style={{ background: f.dot }} />}
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <svg
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 pointer-events-none"
+                  fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-3)' }}
+                >
+                  <circle cx="11" cy="11" r="7" strokeWidth="2" />
+                  <path d="m21 21-4.3-4.3" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Buscar nome, telefone…"
+                  className="input-base"
+                  style={{ paddingLeft: 32, height: 32, fontSize: 12.5 }}
+                />
+              </div>
+              <select
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+                className="input-base shrink-0"
+                style={{ height: 32, fontSize: 12, width: 90, padding: '0 8px' }}
               >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Search */}
-          <div className="flex-1 min-w-[200px] max-w-md ml-auto relative">
-            <svg
-              className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 pointer-events-none"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-              style={{ color: 'var(--text-3)' }}
-            >
-              <circle cx="11" cy="11" r="7" strokeWidth="2" />
-              <path d="m21 21-4.3-4.3" strokeWidth="2" strokeLinecap="round" />
-            </svg>
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nome, telefone ou mensagem…"
-              className="input-base"
-              style={{ paddingLeft: 36, height: 36, fontSize: 13 }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Lista */}
-      <div className="px-5 py-4">
-        {loading && conversations.length === 0 && (
-          <div className="space-y-2">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="skeleton h-16 rounded-xl" />
-            ))}
-          </div>
-        )}
-
-        {!loading && filtered.length === 0 && (
-          <div className="text-center py-20" style={{ color: 'var(--text-3)' }}>
-            <div className="text-sm mb-1">Nenhuma conversa por aqui.</div>
-            <div className="text-xs">
-              {filter !== 'all'
-                ? `Tente outro filtro ou aguarde clientes em "${
-                    FILTERS.find((f) => f.key === filter)?.label
-                  }".`
-                : 'Quando alguem chamar no WhatsApp, vai aparecer aqui.'}
+                {PERIOD_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
             </div>
           </div>
-        )}
 
-        <div className="space-y-2">
-          {filtered.map((conv) => {
-            const heat = leadHeat(conv.leadScore);
-            const isDani = conv.status === 'nina';
-            const isHuman = conv.status === 'human';
-            const lastFromAgent = conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human';
+          {/* Lista scrollável */}
+          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1 min-h-0">
+            {loading && conversations.length === 0 && (
+              <div className="space-y-1.5">
+                {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="skeleton h-16 rounded-xl" />)}
+              </div>
+            )}
 
-            // Cor da borda lateral esquerda por status
-            const accentColor = isDani
-              ? 'var(--dani)'
-              : isHuman
-              ? 'var(--success)'
-              : conv.status === 'paused'
-              ? 'var(--warning)'
-              : 'var(--border)';
+            {!loading && filtered.length === 0 && (
+              <div className="text-center py-16 px-4" style={{ color: 'var(--text-3)' }}>
+                <div className="text-sm mb-1">Nenhuma conversa.</div>
+                <div className="text-xs">
+                  {filter !== 'all'
+                    ? `Tente outro filtro.`
+                    : 'Quando alguém chamar no WhatsApp, aparece aqui.'}
+                </div>
+              </div>
+            )}
 
-            return (
-              <Link
-                key={conv.id}
-                to={`/conversations/${conv.id}`}
-                className="group flex items-stretch rounded-xl overflow-hidden transition-all hover:shadow-md"
-                style={{
-                  textDecoration: 'none',
-                  background: 'var(--bg-surface)',
-                  border: '1px solid var(--border)',
-                  boxShadow: 'var(--sh-sm)',
-                }}
-              >
-                {/* Accent bar lateral */}
-                <div
-                  className="w-[3px] shrink-0 transition-all group-hover:w-[4px]"
-                  style={{ background: accentColor }}
-                />
+            {filtered.map((conv) => {
+              const heat = leadHeat(conv.leadScore);
+              const isDani = conv.status === 'nina';
+              const isHuman = conv.status === 'human';
+              const lastFromAgent = conv.lastMessageFrom === 'nina' || conv.lastMessageFrom === 'human';
+              const isSelected = selectedId === conv.id;
 
-                <div className="flex items-start gap-3 flex-1 px-4 py-3 min-w-0">
-                  {/* Avatar com status dot */}
-                  <div className="relative shrink-0 mt-0.5">
-                    <Avatar
-                      fallback={conv.contactName ?? `+${conv.contactPhone}`}
-                      size="md"
-                    />
-                    <span
-                      className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
-                      style={{
-                        background: accentColor,
-                        borderColor: 'var(--bg-surface)',
-                      }}
-                    />
-                  </div>
+              const accentColor = isDani
+                ? 'var(--dani)'
+                : isHuman
+                ? 'var(--success)'
+                : conv.status === 'paused'
+                ? 'var(--warning)'
+                : 'var(--border)';
 
-                  {/* Conteudo */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => setSelectedId(conv.id)}
+                  className="group w-full flex items-stretch rounded-xl overflow-hidden transition-all text-left"
+                  style={{
+                    background: isSelected ? 'var(--primary-tint)' : 'var(--bg-surface)',
+                    border: `1px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}`,
+                    boxShadow: isSelected ? 'none' : 'var(--sh-sm)',
+                  }}
+                >
+                  {/* Accent bar lateral */}
+                  <div
+                    className="w-[3px] shrink-0 transition-all"
+                    style={{ background: accentColor }}
+                  />
+
+                  <div className="flex items-start gap-2.5 flex-1 px-3 py-2.5 min-w-0">
+                    {/* Avatar com status dot */}
+                    <div className="relative shrink-0 mt-0.5">
+                      <Avatar fallback={conv.contactName ?? `+${conv.contactPhone}`} size="sm" />
                       <span
-                        className="text-[13.5px] font-semibold truncate"
-                        style={{ color: 'var(--text-1)' }}
-                      >
-                        {conv.contactName ?? `+${conv.contactPhone}`}
-                      </span>
-
-                      {isDani && (
-                        <span
-                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold shrink-0 px-1.5 py-0.5 rounded-full"
-                          style={{
-                            background: 'var(--dani-bg)',
-                            color: 'var(--dani-text)',
-                          }}
-                        >
-                          ✦ Dani
-                        </span>
-                      )}
-
-                      {heat && (
-                        <span
-                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0"
-                          style={{
-                            background: 'transparent',
-                            color: heat.color,
-                            border: `1px solid ${heat.color}`,
-                          }}
-                        >
-                          {heat.label}
-                        </span>
-                      )}
-
-                      {conv.intentLabel && conv.intentLabel !== 'curioso' && (
-                        <span
-                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-                          style={{
-                            background: 'var(--bg-sunken)',
-                            color: 'var(--text-3)',
-                          }}
-                        >
-                          {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
-                        </span>
-                      )}
-
-                      {conv.followupState === 'sent' && (
-                        <span
-                          className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0"
-                          style={{
-                            background: 'var(--dani-bg)',
-                            color: 'var(--dani-text)',
-                          }}
-                        >
-                          ↻ follow-up
-                        </span>
-                      )}
+                        className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2"
+                        style={{ background: accentColor, borderColor: 'var(--bg-surface)' }}
+                      />
                     </div>
 
-                    {/* Preview da última mensagem */}
-                    <p
-                      className="text-[12px] truncate leading-snug"
-                      style={{ color: 'var(--text-2)' }}
-                    >
-                      {lastFromAgent && (
-                        <span style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
-                          {conv.lastMessageFrom === 'nina' ? 'Dani: ' : 'Bia: '}
+                    {/* Conteúdo */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[13px] font-semibold truncate flex-1" style={{ color: 'var(--text-1)' }}>
+                          {conv.contactName ?? `+${conv.contactPhone}`}
                         </span>
-                      )}
-                      {conv.lastMessage
-                        ? conv.lastMessage
-                        : <span style={{ color: 'var(--text-3)' }}>sem mensagens</span>}
-                    </p>
-                  </div>
+                        <span className="text-[10.5px] tabular-nums whitespace-nowrap shrink-0" style={{ color: 'var(--text-3)' }}>
+                          {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
+                        </span>
+                      </div>
 
-                  {/* Timestamp */}
-                  <div className="text-right shrink-0 flex flex-col items-end gap-1 ml-2">
-                    <span
-                      className="text-[11px] tabular-nums whitespace-nowrap"
-                      style={{ color: 'var(--text-3)' }}
-                    >
-                      {timeAgo(conv.lastMessageAt ?? conv.createdAt)}
-                    </span>
-                    {/* Indicador de quem está ativo */}
-                    <span
-                      className="text-[10px] font-medium"
-                      style={{
-                        color: isDani ? 'var(--dani)' : isHuman ? 'var(--success)' : 'var(--text-3)',
-                      }}
-                    >
-                      {isDani ? '✦ Dani' : isHuman ? '● Humano' : conv.status === 'paused' ? '⏸' : '✓'}
-                    </span>
+                      {/* Badges */}
+                      <div className="flex items-center gap-1 mb-0.5 flex-wrap">
+                        {isDani && (
+                          <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--dani-bg)', color: 'var(--dani-text)' }}>
+                            ✦ Dani
+                          </span>
+                        )}
+                        {isHuman && (
+                          <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ background: 'var(--success-bg)', color: 'var(--success)' }}>
+                            ● Humano
+                          </span>
+                        )}
+                        {heat && (
+                          <span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded-full" style={{ color: heat.color, border: `1px solid ${heat.color}` }}>
+                            {heat.label}
+                          </span>
+                        )}
+                        {conv.intentLabel && conv.intentLabel !== 'curioso' && (
+                          <span className="text-[9.5px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-sunken)', color: 'var(--text-3)' }}>
+                            {INTENT_LABELS[conv.intentLabel] ?? conv.intentLabel}
+                          </span>
+                        )}
+                        {conv.followupState === 'sent' && (
+                          <span className="text-[9.5px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'var(--dani-bg)', color: 'var(--dani-text)' }}>
+                            ↻
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Preview */}
+                      <p className="text-[11.5px] truncate leading-snug" style={{ color: 'var(--text-2)' }}>
+                        {lastFromAgent && (
+                          <span style={{ color: 'var(--text-3)', fontStyle: 'italic' }}>
+                            {conv.lastMessageFrom === 'nina' ? 'Dani: ' : 'Bia: '}
+                          </span>
+                        )}
+                        {conv.lastMessage ?? <span style={{ color: 'var(--text-3)' }}>sem mensagens</span>}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            );
-          })}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ─── RIGHT: detalhe da conversa ──────────── */}
+        <div
+          className={`flex-1 min-w-0 flex-col min-h-0 ${selectedId ? 'flex' : 'hidden lg:flex'}`}
+          style={{ background: 'var(--bg-app)' }}
+        >
+          {selectedId ? (
+            <ConversationDetailPage
+              key={selectedId}
+              idProp={selectedId}
+              embedded
+              onBack={() => setSelectedId(null)}
+            />
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-6" style={{ color: 'var(--text-3)' }}>
+              <div
+                className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4"
+                style={{ background: 'var(--bg-subtle)' }}
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--text-3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+                </svg>
+              </div>
+              <div className="text-sm font-medium" style={{ color: 'var(--text-2)' }}>
+                Selecione uma conversa
+              </div>
+              <div className="text-xs mt-1 max-w-[260px]">
+                Clique numa conversa à esquerda pra ver o histórico e responder como Bia.
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </AppShell>
