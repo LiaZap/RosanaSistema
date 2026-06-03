@@ -393,6 +393,10 @@ async function applyDecision(
           followupAttempts: sql`${conversations.followupAttempts} + 1`,
           followupTotalAttempts: sql`${conversations.followupTotalAttempts} + 1`,
           followupLastAttemptAt: new Date(),
+          // DANI esta retomando a conversa via follow-up -> volta pro modo nina
+          // e zera o cooldown humano, pra que a resposta do cliente seja atendida.
+          status: 'nina',
+          lastHumanAt: null,
           updatedAt: new Date(),
         })
         .where(
@@ -511,11 +515,23 @@ export async function resetFollowupOnUserReply(
   const isSubstantive =
     !!userMessage && userMessage.trim().length >= SUBSTANTIVE_REPLY_MIN_CHARS;
 
+  // Le o estado atual: se a DANI mandou follow-up (sent) e a conversa esta
+  // travada em 'human', o cliente esta respondendo a DANI -> ela deve retomar
+  // o atendimento (sai do cooldown humano) e responder.
+  const [conv] = await db
+    .select({ followupState: conversations.followupState, status: conversations.status })
+    .from(conversations)
+    .where(eq(conversations.id, conversationId))
+    .limit(1);
+
+  const reactivateDani = conv?.followupState === 'sent' && conv?.status === 'human';
+
   await db
     .update(conversations)
     .set({
       followupState: 'idle',
       ...(isSubstantive ? { followupAttempts: 0 } : {}),
+      ...(reactivateDani ? { status: 'nina' as const, lastHumanAt: null } : {}),
       updatedAt: new Date(),
     })
     .where(
@@ -525,6 +541,12 @@ export async function resetFollowupOnUserReply(
       ),
     );
 
+  if (reactivateDani) {
+    logger.info(
+      { conversationId },
+      '[Followup] cliente respondeu follow-up -> DANI reativada (sai do cooldown humano)',
+    );
+  }
   if (isSubstantive) {
     logger.debug({ conversationId }, '[Followup] reset cycle attempts (substantive reply)');
   }
