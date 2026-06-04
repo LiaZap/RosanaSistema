@@ -219,6 +219,42 @@ dani.get('/conversations', requireAuth, async (c) => {
   return c.json({ conversations: rows });
 });
 
+// ── DELETE /dani/conversations/:id ──────────────────
+// Exclui uma conversa de TESTE do proprio usuario (e suas mensagens via
+// cascade). Valida que e do contato test:<userId> pra nunca apagar conversa
+// real por engano.
+dani.delete('/conversations/:id', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const conversationId = c.req.param('id');
+  const contact = await getOrCreateTestContact({
+    accountId,
+    userId: user.id,
+    userEmail: user.email,
+  });
+
+  const [conv] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.accountId, accountId),
+        eq(conversations.contactId, contact.id), // SO conversa de teste do user
+      ),
+    )
+    .limit(1);
+  if (!conv) throw new NotFoundError('Conversa de teste nao encontrada');
+
+  // messages.conversationId tem ON DELETE CASCADE -> apaga as mensagens junto
+  await db.delete(conversations).where(eq(conversations.id, conversationId));
+  logger.info({ conversationId, userId: user.id }, '[DANI] conversa de teste excluida');
+  return c.json({ ok: true });
+});
+
 // ── POST /dani/conversations/:id/reactivate ─────────
 // Devolve a conversa pra DANI (status -> nina). Usado quando humano
 // estava atendendo via "modo human" e quer reativar a IA.

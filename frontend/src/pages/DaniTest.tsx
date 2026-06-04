@@ -221,6 +221,22 @@ export default function DaniTestPage() {
     setError(null);
   }
 
+  async function handleDeleteConv(id: string) {
+    if (!accountId) return;
+    if (!confirm('Excluir esta conversa de teste? As mensagens serao apagadas.')) return;
+    try {
+      await api.delete(`/dani/conversations/${id}?accountId=${accountId}`);
+      if (id === conversationId) {
+        localStorage.removeItem(CONV_STORAGE_KEY);
+        setConversationId(null);
+        setTurns([]);
+      }
+      loadTestConvs(accountId);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Falha ao excluir');
+    }
+  }
+
   void me;
 
   function previewLabel(c: TestConv): string {
@@ -253,10 +269,10 @@ export default function DaniTestPage() {
             {testConvs.map((c) => {
               const active = c.id === conversationId;
               return (
-                <button
+                <div
                   key={c.id}
                   onClick={() => openConv(c.id)}
-                  className="w-full text-left rounded-lg px-3 py-2 transition-all"
+                  className="group w-full text-left rounded-lg px-3 py-2 transition-all cursor-pointer"
                   style={{
                     background: active ? 'var(--primary-tint)' : 'var(--bg-surface)',
                     border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
@@ -266,16 +282,32 @@ export default function DaniTestPage() {
                     <span className="text-[12px] font-semibold font-mono truncate" style={{ color: 'var(--text-1)' }}>
                       #{c.id.slice(0, 6)}
                     </span>
-                    <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>
-                      {c.lastMessageAt
-                        ? new Date(c.lastMessageAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
-                        : '—'}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-3)' }}>
+                        {c.lastMessageAt
+                          ? new Date(c.lastMessageAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+                          : '—'}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteConv(c.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-destructive/10"
+                        style={{ color: 'var(--danger)' }}
+                        title="Excluir conversa de teste"
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
                   <div className="text-[11.5px] truncate" style={{ color: 'var(--text-2)' }}>
                     {previewLabel(c)}
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
