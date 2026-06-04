@@ -22,6 +22,37 @@ function normalize(input: string): string {
     .trim();
 }
 
+/**
+ * Grupos de SINONIMOS de busca. Quando a consulta menciona qualquer termo
+ * de um grupo, a busca tambem procura os outros termos do mesmo grupo.
+ *
+ * Caso da loja: o tecido macio/quentinho esta cadastrado no Bling como
+ * "Microsoft" (marca de tecido plush/fleece). Cliente que pede "soft",
+ * "fleece" ou "plush" precisa achar os produtos "Microsoft".
+ *
+ * Pra adicionar novos sinonimos no futuro: e so incluir um array aqui.
+ */
+const SYNONYM_GROUPS: string[][] = [
+  ['soft', 'microsoft', 'fleece', 'plush', 'pelucia', 'peluciado', 'peludinho'],
+];
+
+/**
+ * Dada a consulta normalizada, retorna os termos EXTRAS (sinonimos) que devem
+ * entrar na busca. Nao inclui o que ja esta na consulta.
+ */
+function expandSynonyms(q: string): string[] {
+  const extras = new Set<string>();
+  for (const group of SYNONYM_GROUPS) {
+    // O grupo "dispara" se a consulta contem qualquer termo dele
+    if (group.some((term) => q.includes(term))) {
+      for (const term of group) {
+        if (!q.includes(term)) extras.add(term);
+      }
+    }
+  }
+  return [...extras];
+}
+
 export interface ProductSearchResult {
   id: string;
   blingId: string | null;
@@ -147,12 +178,30 @@ export async function buscarProdutos(opts: {
   const q = normalize(opts.consulta);
   if (!q) return [];
 
-  // Score: 100 exato | 50 prefix | 30 contains | +40 se disponivel
+  // Sinonimos de tecido (ex: soft/fleece -> "microsoft" no cadastro)
+  const synTerms = expandSynonyms(q);
+
+  // WHERE: match na consulta OU em qualquer sinonimo
+  const matchClauses = [
+    sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`}`,
+    ...synTerms.map((t) => sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${t}%`}`),
+  ];
+  const whereMatch = matchClauses.reduce((a, b) => sql`${a} OR ${b}`);
+
+  // Match por sinonimo (pra dar score quando casa so via sinonimo)
+  const synMatch = synTerms.length
+    ? synTerms
+        .map((t) => sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${t}%`}`)
+        .reduce((a, b) => sql`${a} OR ${b}`)
+    : sql`false`;
+
+  // Score: 100 exato | 50 prefix | 30 contains | 25 via sinonimo | +40 disponivel
   const score = sql<number>`(
     case
       when ${produtosCatalogo.nomeNormalizado} = ${q} then 100
       when ${produtosCatalogo.nomeNormalizado} ilike ${`${q}%`} then 50
       when ${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`} then 30
+      when (${synMatch}) then 25
       else 0
     end +
     case when ${produtosCatalogo.disponivel} = true then 40 else 0 end
@@ -164,7 +213,7 @@ export async function buscarProdutos(opts: {
     .where(
       and(
         eq(produtosCatalogo.accountId, opts.accountId),
-        sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`}`,
+        sql`(${whereMatch})`,
       ),
     )
     .orderBy(desc(score), desc(produtosCatalogo.disponivel))
