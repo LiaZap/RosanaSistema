@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import { Avatar } from '../components/ui/avatar';
-import { DirSegment, ThemeToggle } from '../components/ui/ThemeControls';
+import { ThemeToggle } from '../components/ui/ThemeControls';
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
@@ -486,20 +486,6 @@ export default function PerfilPage() {
                 </div>
               </div>
               <ThemeToggle />
-            </div>
-            <div
-              className="flex items-center justify-between p-3 rounded-md"
-              style={{ background: 'var(--bg-subtle)' }}
-            >
-              <div>
-                <div className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
-                  Direção de cor
-                </div>
-                <div className="text-xs" style={{ color: 'var(--text-3)' }}>
-                  Cedro · Índigo · Brasa
-                </div>
-              </div>
-              <DirSegment />
             </div>
           </div>
         </div>

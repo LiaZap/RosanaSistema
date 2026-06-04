@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { CommandPalette, useCmdK } from './ui/CommandPalette';
-import { DirSegment, ThemeToggle } from './ui/ThemeControls';
+import { ThemeToggle } from './ui/ThemeControls';
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
@@ -324,7 +324,6 @@ export default function AppShell({ title, subtitle, actions, bare, children }: A
               <span className="font-medium">Comandos</span>
               <span className="kbd">⌘K</span>
             </button>
-            <DirSegment />
             <ThemeToggle />
           </div>
 

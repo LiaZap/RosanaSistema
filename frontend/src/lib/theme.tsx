@@ -20,28 +20,30 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
-  const [dir, setDirState] = useState<Direction>(() => {
-    if (typeof window === 'undefined') return 'cedro';
-    const saved = localStorage.getItem('fce-dir') as Direction | null;
-    if (saved === 'cedro' || saved === 'indigo' || saved === 'brasa') return saved;
-    return 'cedro';
-  });
+  // Direcao FIXA em 'cedro' (opcoes Indigo/Brasa removidas a pedido).
+  // Mantemos dir/setDir na interface pra nao quebrar imports, mas e no-op.
+  const dir: Direction = 'cedro';
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   useEffect(() => {
-    document.documentElement.setAttribute('data-dir', dir);
-  }, [dir]);
+    document.documentElement.setAttribute('data-dir', 'cedro');
+    // Limpa preferencia antiga de direcao (caso tenha indigo/brasa salvo)
+    try {
+      localStorage.removeItem('fce-dir');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
     localStorage.setItem('fce-theme', t);
   };
-  const setDir = (d: Direction) => {
-    setDirState(d);
-    localStorage.setItem('fce-dir', d);
+  const setDir = (_d: Direction) => {
+    // no-op: direcao fixa em cedro
   };
 
   return (
