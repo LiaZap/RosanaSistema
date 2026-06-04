@@ -5,6 +5,7 @@ import { db } from '../db/client.js';
 import { produtosCatalogo } from '../db/schema.js';
 import { fetchFreshProductImageUrl, getValidAccessToken } from './bling-client.js';
 import { logger } from './logger.js';
+import { appendMediaSig } from './media-signing.js';
 
 /**
  * Cache local de imagens de produto no MinIO.
@@ -70,7 +71,8 @@ export async function uploadAssetBuffer(opts: {
     }),
   );
   const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
-  return `${API_BASE}/media/asset/${encodeURIComponent(opts.key)}`;
+  // Assina a URL: /media/asset exige ?sig= (HMAC) pra evitar IDOR por key.
+  return appendMediaSig(`${API_BASE}/media/asset/${encodeURIComponent(opts.key)}`, opts.key);
 }
 
 /**
@@ -85,6 +87,9 @@ async function tryDownload(imageUrl: string): Promise<Response | null> {
         Accept: 'image/*,*/*',
       },
       redirect: 'follow',
+      // M5: sem timeout, o Bling lento pendurava /media/file e o cron de
+      // cache (100 itens sequenciais -> 1 trava todos + sobrepoe o tick).
+      signal: AbortSignal.timeout(8000),
     });
     return res;
   } catch {

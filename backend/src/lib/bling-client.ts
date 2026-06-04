@@ -211,8 +211,13 @@ export async function getValidAccessToken(accountId: string): Promise<string | n
     );
     // Marca cooldown de falha
     redis.set(failKey, msg.slice(0, 200), 'EX', cooldown).catch(() => {});
-    // Retorna token atual (pode funcionar se nao expirou ainda)
-    return cred.accessToken;
+    // L5: so devolve o token atual se ele AINDA nao expirou (margem 30s).
+    // Token expirado nao adianta e mascarava a falha como 401 confuso no
+    // sync; com null, o guard `if(!token)` do chamador trata limpo.
+    if (cred.expiresAt && new Date(cred.expiresAt).getTime() > Date.now() + 30_000) {
+      return cred.accessToken;
+    }
+    return null;
   }
 }
 

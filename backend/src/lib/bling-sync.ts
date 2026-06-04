@@ -34,11 +34,16 @@ function mapBlingProduct(p: BlingProductRaw, accountId: string) {
   // disponivel = situacao 'A' (ativo) e tem estoque
   const disponivel = (p.situacao === 'A' || p.situacao === undefined) && estoque > 0;
 
+  // M3: p.nome e tipado string mas sem garantia em runtime (rascunho/kit
+  // sem nome). p.nome.slice()/normalizeName(p.nome) lancava TypeError e,
+  // como o for tem 1 try/catch externo, ABORTAVA a paginacao inteira
+  // (paginas seguintes nunca processadas). Coalesce pra '' resolve.
+  const nome = (p.nome ?? '').trim();
   return {
     accountId,
     blingId: String(p.id),
-    nome: p.nome.slice(0, 500),
-    nomeNormalizado: normalizeName(p.nome).slice(0, 500),
+    nome: nome.slice(0, 500),
+    nomeNormalizado: normalizeName(nome).slice(0, 500),
     codigo: p.codigo?.slice(0, 100),
     preco: preco.toFixed(2),
     precoPromocional: precoPromocional != null ? precoPromocional.toFixed(2) : null,
