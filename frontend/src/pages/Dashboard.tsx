@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, FunnelChart as ReFunnelChart, Funnel, LabelList,
+  PieChart, Pie, Cell, BarChart, Bar, LabelList,
 } from 'recharts';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
@@ -623,6 +623,10 @@ function ConversionFunnel({
   funnel: { contatos: number; qualificados: number; dealsCriados: number; ganhos: number; valorGanho: number };
   colors: ThemeColors;
 }) {
+  // Barras horizontais (nao "funil" trapezoidal): as etapas NAO sao
+  // monotonicas decrescentes (ex: deals criados pode passar qualificados,
+  // pois a DANI cria deal por intencao de compra direto). Barras mostram
+  // cada valor proporcional, sem distorcer.
   const data = [
     { label: 'Contatos', value: funnel.contatos, fill: colors.info },
     { label: 'Qualificados', value: funnel.qualificados, fill: colors.warning },
@@ -647,14 +651,32 @@ function ConversionFunnel({
           Sem dados no período
         </div>
       ) : (
-        <ResponsiveContainer width="100%" height={210}>
-          <ReFunnelChart>
-            <Tooltip content={<ChartTooltip />} />
-            <Funnel dataKey="value" data={data} isAnimationActive stroke={colors.bgSurface} strokeWidth={2}>
-              <LabelList position="right" dataKey="label" fill={colors.text2} stroke="none" fontSize={12} />
-              <LabelList position="left" dataKey="value" fill={colors.text1} stroke="none" fontSize={13} fontWeight={700} />
-            </Funnel>
-          </ReFunnelChart>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={data} layout="vertical" margin={{ top: 4, right: 32, bottom: 0, left: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={colors.border} horizontal={false} />
+            <XAxis type="number" hide allowDecimals={false} />
+            <YAxis
+              type="category"
+              dataKey="label"
+              tick={{ fontSize: 12, fill: colors.text2 }}
+              axisLine={false}
+              tickLine={false}
+              width={92}
+            />
+            <Tooltip content={<ChartTooltip />} cursor={{ fill: 'transparent' }} />
+            <Bar dataKey="value" radius={[0, 6, 6, 0]} barSize={24} isAnimationActive>
+              {data.map((d, i) => (
+                <Cell key={i} fill={d.fill} />
+              ))}
+              <LabelList
+                dataKey="value"
+                position="right"
+                fill={colors.text1}
+                fontSize={13}
+                fontWeight={700}
+              />
+            </Bar>
+          </BarChart>
         </ResponsiveContainer>
       )}
       {funnel.valorGanho > 0 && (
