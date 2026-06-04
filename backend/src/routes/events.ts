@@ -1,7 +1,10 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import { requireAuth } from '../middleware/auth.js';
-import { ValidationError } from '../lib/errors.js';
+import { and, eq } from 'drizzle-orm';
+import { requireAuth, getUser } from '../middleware/auth.js';
+import { ValidationError, ForbiddenError } from '../lib/errors.js';
+import { db } from '../db/client.js';
+import { accountMembers } from '../db/schema.js';
 import { subscribe, type FceEvent } from '../lib/events-stream.js';
 import { logger } from '../lib/logger.js';
 
@@ -12,6 +15,19 @@ const events = new Hono();
 events.get('/stream', requireAuth, async (c) => {
   const accountId = c.req.query('accountId');
   if (!accountId) throw new ValidationError('accountId required');
+
+  // H9: valida que o usuario e membro do account (ou super-admin).
+  // Sem isso, qualquer usuario logado recebia o feed real-time de QUALQUER
+  // account so passando o accountId na query (vazamento cross-tenant).
+  const user = getUser(c);
+  if (!user.isSuperAdmin) {
+    const [member] = await db
+      .select({ id: accountMembers.id })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, user.id), eq(accountMembers.accountId, accountId)))
+      .limit(1);
+    if (!member) throw new ForbiddenError('Sem acesso a este account');
+  }
 
   return streamSSE(c, async (stream) => {
     logger.info({ accountId }, '[SSE] client connected');

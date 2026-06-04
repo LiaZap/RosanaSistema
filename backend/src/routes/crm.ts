@@ -81,20 +81,6 @@ crm.get('/conversations', requireAuth, async (c) => {
   const daysNum = daysParam && daysParam !== 'all' ? Math.min(Number(daysParam), 365) : 30;
   const periodStart = showAll ? null : new Date(Date.now() - daysNum * 24 * 60 * 60 * 1000);
 
-  // Subquery pra ultima mensagem
-  const lastMessageSub = db
-    .select({
-      conversationId: messages.conversationId,
-      content: messages.content,
-      fromType: messages.fromType,
-      createdAt: messages.createdAt,
-      rowNum: sql<number>`row_number() over (partition by ${messages.conversationId} order by ${messages.createdAt} desc)`.as(
-        'row_num',
-      ),
-    })
-    .from(messages)
-    .as('last_msg');
-
   const whereClauses = [eq(conversations.accountId, accountId)];
   if (status) {
     whereClauses.push(eq(conversations.status, status));
@@ -115,8 +101,8 @@ crm.get('/conversations', requireAuth, async (c) => {
       contactId: contacts.id,
       contactName: contacts.name,
       contactPhone: contacts.phoneNumber,
-      lastMessage: lastMessageSub.content,
-      lastMessageFrom: lastMessageSub.fromType,
+      lastMessage: sql<string | null>`last_msg.content`,
+      lastMessageFrom: sql<'user' | 'nina' | 'human' | null>`last_msg.from_type`,
       intentLabel: conversations.intentLabel,
       sentiment: conversations.sentiment,
       leadScore: conversations.leadScore,
@@ -124,12 +110,20 @@ crm.get('/conversations', requireAuth, async (c) => {
     })
     .from(conversations)
     .leftJoin(contacts, eq(conversations.contactId, contacts.id))
+    // Ultima mensagem por conversa via LATERAL correlacionado: o planner faz
+    // um index seek em (conversation_id, created_at desc) por linha de
+    // conversation (ja filtrada por account + limitada), em vez de rankear
+    // TODA a tabela messages com row_number() (seq scan + sort). Mesma ideia
+    // do JOIN LATERAL usado nas metricas mais abaixo.
     .leftJoin(
-      lastMessageSub,
-      and(
-        eq(lastMessageSub.conversationId, conversations.id),
-        eq(lastMessageSub.rowNum, 1),
-      ),
+      sql`lateral (
+        select content, from_type
+        from ${messages}
+        where conversation_id = ${conversations.id}
+        order by created_at desc
+        limit 1
+      ) as last_msg`,
+      sql`true`,
     )
     .where(and(...whereClauses))
     .orderBy(desc(conversations.lastMessageAt), desc(conversations.createdAt))

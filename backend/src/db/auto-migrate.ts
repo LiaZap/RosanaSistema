@@ -97,6 +97,21 @@ const STATEMENTS: Array<{ label: string; run: () => Promise<unknown> }> = [
       await db.execute(sql`CREATE INDEX IF NOT EXISTS token_usage_created_idx ON token_usage_logs(created_at)`);
     },
   },
+  // M13 — indice composto pro LATERAL "ultima mensagem" do GET /crm/conversations.
+  // Sem ele a query da lista de conversas faz seq scan + sort em messages inteira.
+  {
+    label: 'messages_conversation_created_idx',
+    run: () =>
+      db.execute(sql`CREATE INDEX IF NOT EXISTS messages_conversation_created_idx ON messages (conversation_id, created_at DESC)`),
+  },
+  // M7 — whatsapp_message_id pra dedupe de inbound (idempotencia no retry).
+  {
+    label: 'messages.whatsapp_message_id + unique',
+    run: async () => {
+      await db.execute(sql`ALTER TABLE messages ADD COLUMN IF NOT EXISTS whatsapp_message_id varchar(100)`);
+      await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS messages_wamid_uniq ON messages (account_id, whatsapp_message_id) WHERE whatsapp_message_id IS NOT NULL`);
+    },
+  },
 ];
 
 /**

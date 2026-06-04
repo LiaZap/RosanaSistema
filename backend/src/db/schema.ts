@@ -151,6 +151,12 @@ export const messages = pgTable('messages', {
   accountIdx: index('messages_account_idx').on(t.accountId),
   createdAtIdx: index('messages_created_at_idx').on(t.createdAt),
   bufferIdx: index('messages_buffer_idx').on(t.bufferWindowId),
+  // Composite pra LATERAL "ultima mensagem" do GET /crm/conversations:
+  // index seek por conversa em vez de seq scan + sort em messages inteira.
+  conversationCreatedIdx: index('messages_conversation_created_idx').on(
+    t.conversationId,
+    t.createdAt.desc(),
+  ),
 }));
 
 // ── AI Settings ──────────────────────────────────────
