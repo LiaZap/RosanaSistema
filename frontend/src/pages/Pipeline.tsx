@@ -430,6 +430,10 @@ export default function PipelinePage() {
                         );
                         try {
                           await api.patch(`/pipeline/deals/${deal.id}`, { accountId, stageId: targetStageId });
+                          // L7: recarrega pra atualizar os contadores/valores das
+                          // colunas (summary), igual o handleDrop faz. Sem isso o
+                          // badge de count da coluna ficava stale ate refresh.
+                          await loadAll();
                         } catch {
                           setDeals((prev) =>
                             prev.map((d) => (d.id === deal.id ? { ...d, stageId: deal.stageId } : d)),

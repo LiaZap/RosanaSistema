@@ -162,8 +162,11 @@ export default function ConversationsPage() {
     if (!accountId) return;
     const interval = setInterval(() => loadList(), 15000);
     return () => clearInterval(interval);
+    // M14: inclui 'period' senao o interval guardava o loadList antigo (closure
+    // com period antigo) e a cada 15s sobrescrevia a lista -> "troquei pra 7
+    // dias mas volta sozinho pra 30".
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, filter]);
+  }, [accountId, filter, period]);
 
   // Infinite scroll: ao chegar perto do fim da lista, aumenta o limite
   function handleListScroll(e: React.UIEvent<HTMLDivElement>) {

@@ -53,14 +53,30 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let es: EventSource | null = null;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // M16: o provider monta 1x (deps []) e na tela /auth o user esta
+    // deslogado -> /auth/me falha -> sem SSE. Login e navigate(), nao reload,
+    // entao o effect nao re-roda. Aqui reagendamos a conexao ate logar.
+    function scheduleRetry() {
+      if (cancelled || es) return;
+      retryTimer = setTimeout(connect, 5000);
+    }
 
     async function connect() {
       try {
         const me = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
-        if (!me.ok) return;
+        if (!me.ok) {
+          scheduleRetry();
+          return;
+        }
         const data = (await me.json()) as { accounts?: Array<{ accountId: string }> };
         const accountId = data.accounts?.[0]?.accountId;
-        if (!accountId || cancelled) return;
+        if (cancelled) return;
+        if (!accountId) {
+          scheduleRetry();
+          return;
+        }
 
         const url = `${API_BASE}/events/stream?accountId=${accountId}`;
         es = new EventSource(url, { withCredentials: true });
@@ -107,13 +123,14 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
           // Auto-reconnect handled by EventSource
         };
       } catch {
-        // ignore
+        scheduleRetry();
       }
     }
     connect();
 
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       es?.close();
     };
   }, []);

@@ -79,14 +79,29 @@ export const api = {
     request<T>(path, { method: 'DELETE' }),
 
   // FormData (sem Content-Type header pra browser setar boundary do multipart)
-  postForm: <T>(path: string, body: FormData) => {
+  postForm: async <T>(path: string, body: FormData): Promise<T> => {
     const url = `${BASE_URL}${path}`;
-    return fetch(url, { method: 'POST', credentials: 'include', body })
-      .then(async (res) => {
-        const text = await res.text();
-        const data = text ? JSON.parse(text) : {};
-        if (!res.ok) throw new ApiError(res.status, data);
-        return data as T;
-      });
+    let res: Response;
+    try {
+      res = await fetch(url, { method: 'POST', credentials: 'include', body });
+    } catch (e) {
+      throw new ApiError(0, { error: `Falha de conexao: ${(e as Error).message}` });
+    }
+    if (res.status === 204) return undefined as T;
+    const text = await res.text();
+    // M15: JSON.parse sem try-catch lancava SyntaxError cru no upload 413
+    // (nginx responde HTML) -> usuario via msg inutil. Agora vira ApiError.
+    let data: Record<string, unknown>;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      const msg =
+        res.status === 413
+          ? 'Arquivo grande demais (limite do servidor).'
+          : `Resposta invalida do servidor (HTTP ${res.status}).`;
+      throw new ApiError(res.status, { error: msg });
+    }
+    if (!res.ok) throw new ApiError(res.status, data);
+    return data as T;
   },
 };

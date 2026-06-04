@@ -397,17 +397,28 @@ export default function WhatsAppPage() {
                           isCurrent ? 'border-fce-pink/40 bg-fce-pink/5' : 'border-border bg-card'
                         } flex items-center gap-3`}
                       >
-                        {inst.profilePicUrl ? (
+                        {inst.profilePicUrl && (
                           <img
                             src={inst.profilePicUrl}
                             alt={inst.profileName ?? inst.name}
                             className="w-10 h-10 rounded-full object-cover"
+                            onError={(e) => {
+                              // L8: URL de foto do WhatsApp (pps.whatsapp.net)
+                              // expira (403/404). Esconde a img e revela as
+                              // iniciais (irmao oculto), sem icone quebrado.
+                              const img = e.currentTarget;
+                              img.style.display = 'none';
+                              const fb = img.nextElementSibling as HTMLElement | null;
+                              if (fb) fb.style.display = 'flex';
+                            }}
                           />
-                        ) : (
-                          <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-xs">
-                            {inst.name.slice(0, 2).toUpperCase()}
-                          </div>
                         )}
+                        <div
+                          className="w-10 h-10 rounded-full bg-muted items-center justify-center text-xs"
+                          style={{ display: inst.profilePicUrl ? 'none' : 'flex' }}
+                        >
+                          {inst.name.slice(0, 2).toUpperCase()}
+                        </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm text-foreground truncate">
