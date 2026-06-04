@@ -169,8 +169,10 @@ async function processInbound(data: InboundJobData): Promise<void> {
     } // end else (allowed)
   }
 
-  // 1. Persiste user message
-  const [saved] = await db
+  // 1. Persiste user message (M7: dedupe no retry via unique parcial
+  // (account_id, whatsapp_message_id). Se o job re-roda apos um await pos-insert
+  // falhar, a mesma msg nao duplica no banco nem no buffer).
+  const insertedMsg = await db
     .insert(messages)
     .values({
       conversationId,
@@ -180,7 +182,14 @@ async function processInbound(data: InboundJobData): Promise<void> {
       content: text,
       whatsappMessageId,
     })
+    .onConflictDoNothing()
     .returning({ id: messages.id });
+
+  if (insertedMsg.length === 0) {
+    logger.info({ whatsappMessageId, conversationId }, '[Inbound] msg duplicada (retry) - skip');
+    return;
+  }
+  const saved = insertedMsg[0]!;
 
   // 2. Atualiza lastMessageAt na conversation
   await db

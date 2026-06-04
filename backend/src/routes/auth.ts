@@ -62,79 +62,63 @@ auth.post('/signup', async (c) => {
   const [anyUser] = await db.select({ id: users.id }).from(users).limit(1);
   const isFirstUser = !anyUser;
 
-  const [newUser] = await db
-    .insert(users)
-    .values({
-      email: emailLower,
-      hashedPassword,
-      isSuperAdmin: isFirstUser,
-    })
-    .returning();
-
-  await db.insert(profiles).values({
-    userId: newUser.id,
-    fullName: fullName ?? null,
-  });
-
-  // Bootstrap: first user → create FCE account + owner membership
-  if (isFirstUser) {
-    let [account] = await db
-      .select()
-      .from(accounts)
-      .where(eq(accounts.slug, 'fce'))
-      .limit(1);
-
-    if (!account) {
-      [account] = await db
-        .insert(accounts)
-        .values({ name: 'FCE - Filhos com Estilo', slug: 'fce', plan: 'pro' })
-        .returning();
-    }
-
-    await db.insert(accountMembers).values({
-      accountId: account.id,
-      userId: newUser.id,
-      role: 'owner',
-      status: 'active',
-    });
-
-    logger.info(
-      { userId: newUser.id, accountId: account.id },
-      'Bootstrap: first user created as owner',
-    );
-  } else if (workspaceName) {
-    // Multi-tenant self-service: cria workspace novo + owner
-    const baseSlug = slugify(workspaceName);
-    let slug = baseSlug;
-    let attempt = 0;
-    while (attempt < 10) {
-      const [existsSlug] = await db
-        .select({ id: accounts.id })
-        .from(accounts)
-        .where(eq(accounts.slug, slug))
-        .limit(1);
-      if (!existsSlug) break;
-      attempt++;
-      slug = `${baseSlug}-${attempt + 1}`;
-    }
-
-    const [account] = await db
-      .insert(accounts)
-      .values({ name: workspaceName.slice(0, 255), slug, plan: 'pro' })
+  // M11: tudo numa transacao. Antes, um crash entre os inserts deixava o
+  // user SEM membership e isFirstUser=false pra sempre (bootstrap travado,
+  // /auth/me retornando accounts:[]). Atomico = ou cria tudo, ou nada.
+  const newUser = await db.transaction(async (tx) => {
+    const [u] = await tx
+      .insert(users)
+      .values({ email: emailLower, hashedPassword, isSuperAdmin: isFirstUser })
       .returning();
 
-    await db.insert(accountMembers).values({
-      accountId: account.id,
-      userId: newUser.id,
-      role: 'owner',
-      status: 'active',
-    });
+    await tx.insert(profiles).values({ userId: u.id, fullName: fullName ?? null });
 
-    logger.info(
-      { userId: newUser.id, accountId: account.id, slug },
-      'Self-service: new workspace created',
-    );
-  }
+    // Bootstrap: first user → create FCE account + owner membership
+    if (isFirstUser) {
+      let [account] = await tx.select().from(accounts).where(eq(accounts.slug, 'fce')).limit(1);
+      if (!account) {
+        [account] = await tx
+          .insert(accounts)
+          .values({ name: 'FCE - Filhos com Estilo', slug: 'fce', plan: 'pro' })
+          .returning();
+      }
+      await tx.insert(accountMembers).values({
+        accountId: account.id,
+        userId: u.id,
+        role: 'owner',
+        status: 'active',
+      });
+      logger.info({ userId: u.id, accountId: account.id }, 'Bootstrap: first user created as owner');
+    } else if (workspaceName) {
+      // Multi-tenant self-service: cria workspace novo + owner
+      const baseSlug = slugify(workspaceName);
+      let slug = baseSlug;
+      let attempt = 0;
+      while (attempt < 10) {
+        const [existsSlug] = await tx
+          .select({ id: accounts.id })
+          .from(accounts)
+          .where(eq(accounts.slug, slug))
+          .limit(1);
+        if (!existsSlug) break;
+        attempt++;
+        slug = `${baseSlug}-${attempt + 1}`;
+      }
+      const [account] = await tx
+        .insert(accounts)
+        .values({ name: workspaceName.slice(0, 255), slug, plan: 'pro' })
+        .returning();
+      await tx.insert(accountMembers).values({
+        accountId: account.id,
+        userId: u.id,
+        role: 'owner',
+        status: 'active',
+      });
+      logger.info({ userId: u.id, accountId: account.id, slug }, 'Self-service: new workspace created');
+    }
+
+    return u;
+  });
 
   const session = await lucia.createSession(newUser.id, {});
   c.header('Set-Cookie', lucia.createSessionCookie(session.id).serialize());
