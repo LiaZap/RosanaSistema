@@ -55,13 +55,18 @@ admin.get('/accounts', async (c) => {
     rows.map(async (acc) => {
       const members = await db
         .select({
-          id: accountMembers.id,
+          // memberId (nao 'id') — o frontend usa isso na URL do PATCH/DELETE.
+          // Antes vinha como 'id' e o front lia 'memberId' = undefined ->
+          // PATCH /members/undefined -> "invalid input syntax for type uuid".
+          memberId: accountMembers.id,
           role: accountMembers.role,
           status: accountMembers.status,
           userId: accountMembers.userId,
           email: users.email,
+          isSuperAdmin: users.isSuperAdmin,
           fullName: profiles.fullName,
-          createdAt: accountMembers.createdAt,
+          avatarUrl: profiles.avatarUrl,
+          joinedAt: accountMembers.createdAt,
         })
         .from(accountMembers)
         .innerJoin(users, eq(users.id, accountMembers.userId))

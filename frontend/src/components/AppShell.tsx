@@ -92,13 +92,14 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    // Secao visivel a todos: o cliente (manager/sdr) ve so o "Teste de chat".
+    // Os itens de configuracao continuam adminOnly e somem pro cliente.
     label: 'DANI',
-    adminOnly: true,
     items: [
       { to: '/agent', label: 'Configuracao', icon: I.agent, adminOnly: true },
       { to: '/knowledge', label: 'Base de conhecimento', icon: I.dashboard, adminOnly: true },
       { to: '/library', label: 'Biblioteca', icon: I.cloud, adminOnly: true },
-      { to: '/dani', label: 'Teste de chat', icon: I.testTube, adminOnly: true },
+      { to: '/dani', label: 'Teste de chat', icon: I.testTube },
     ],
   },
   {

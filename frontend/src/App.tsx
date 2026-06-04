@@ -31,15 +31,11 @@ export default function App() {
         <Route path="/appointments" element={<AppointmentsPage />} />
         <Route path="/perfil" element={<PerfilPage />} />
 
+        {/* Teste de chat: liberado pro cliente (manager/sdr) tambem.
+            A validacao por-conta e feita no backend (assertAccountMember). */}
+        <Route path="/dani" element={<DaniTestPage />} />
+
         {/* Admin-only — AX team (owner/admin/superadmin) */}
-        <Route
-          path="/dani"
-          element={
-            <RequireAdmin>
-              <DaniTestPage />
-            </RequireAdmin>
-          }
-        />
         <Route
           path="/agent"
           element={

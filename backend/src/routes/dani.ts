@@ -22,9 +22,12 @@ import { logger } from '../lib/logger.js';
 
 const dani = new Hono();
 
-// Todas as rotas /dani sao admin-only (chat de teste, settings, etc).
-// Cliente final (Rosana) NAO precisa do chat de teste — esse e pro AX validar.
-dani.use('*', requireAuth, requireAdmin);
+// Chat/conversas de TESTE: qualquer membro autenticado da account pode usar
+// (incl. Cliente/manager e SDR). A validacao por-conta e feita em cada rota
+// via assertAccountMember(userId, accountId).
+// Settings da DANI (GET/PUT /settings) continuam admin-only — requireAdmin
+// e aplicado individualmente nessas rotas mais abaixo.
+dani.use('*', requireAuth);
 
 const chatSchema = z.object({
   message: z.string().min(1, 'message required').max(4000),
@@ -326,7 +329,8 @@ dani.get('/conversations/:id/messages', requireAuth, async (c) => {
 });
 
 // ── GET /dani/settings ───────────────────────────────
-dani.get('/settings', requireAuth, async (c) => {
+// Config da DANI e admin-only (cliente nao edita prompt/modelo/etc).
+dani.get('/settings', requireAuth, requireAdmin, async (c) => {
   const user = getUser(c);
   const accountId = c.req.query('accountId');
   if (!accountId) throw new ValidationError('accountId query param required');
@@ -340,7 +344,8 @@ dani.get('/settings', requireAuth, async (c) => {
 });
 
 // ── PUT /dani/settings ───────────────────────────────
-dani.put('/settings', requireAuth, async (c) => {
+// Config da DANI e admin-only (cliente nao edita prompt/modelo/etc).
+dani.put('/settings', requireAuth, requireAdmin, async (c) => {
   const user = getUser(c);
   const body = await c.req.json();
   const parsed = settingsUpdateSchema.safeParse(body);
