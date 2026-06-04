@@ -223,16 +223,28 @@ export const TOOL_HANDLERS: Record<
       } satisfies CriarAgendamentoToolResult;
     }
 
-    // Combina data + hora em ISO completo (assume timezone do servidor)
-    const [hh, mm] = hora.split(':').map(Number);
-    const dt = new Date(dataIso);
+    // L4: valida o formato da hora ANTES de usar (Gemini as vezes manda
+    // '14', '2 da tarde', '14:00h' -> NaN -> Invalid Date).
+    if (!/^([01]?\d|2[0-3]):[0-5]\d$/.test(hora)) {
+      return {
+        status: 'FALHA',
+        error: `Hora invalida: ${hora} (use HH:MM)`,
+      } satisfies CriarAgendamentoToolResult;
+    }
+
+    // H7: monta o instante com offset BRT (-03:00) EXPLICITO. Sem isso, o
+    // servidor (containers em UTC) interpretava a hora como UTC e o
+    // agendamento/convite GCal saiam 3h deslocados em TODO agendamento.
+    const [hRaw, mRaw] = hora.split(':');
+    const hhmm = `${hRaw.padStart(2, '0')}:${mRaw.padStart(2, '0')}`;
+    const dataOnly = dataIso.slice(0, 10); // YYYY-MM-DD
+    const dt = new Date(`${dataOnly}T${hhmm}:00-03:00`);
     if (isNaN(dt.getTime())) {
       return {
         status: 'FALHA',
-        error: `Data invalida: ${dataIso}`,
+        error: `Data/hora invalida: ${dataIso} ${hora}`,
       } satisfies CriarAgendamentoToolResult;
     }
-    dt.setHours(hh, mm, 0, 0);
 
     try {
       const [created] = await db

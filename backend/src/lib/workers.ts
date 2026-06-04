@@ -608,8 +608,8 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
 /**
  * OUTBOUND - envia via Evolution API.
  */
-async function processOutbound(data: OutboundJobData): Promise<void> {
-  const { accountId, phoneNumber, text, imageUrl, mediaUrl, mediaType, caption } = data;
+async function processOutbound(data: OutboundJobData, isLastAttempt = false): Promise<void> {
+  const { accountId, phoneNumber, text, imageUrl, mediaUrl, mediaType, caption, conversationId } = data;
 
   // Sprint 11: rate-limit outbound por contato (max 30/min)
   const rl = await outboundPerContact(phoneNumber);
@@ -632,27 +632,51 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
     throw new Error('No WhatsApp session');
   }
 
+  // H4: se a midia falhar DEFINITIVAMENTE (ultima tentativa), enfileira o
+  // caption como TEXTO separado. Senao o cliente perdia preco/fechamento
+  // junto com a foto que nao chegou (mas o painel marcava "DANI respondeu").
+  const mediaFallbackText = async () => {
+    if (isLastAttempt && caption && caption.trim()) {
+      await outboundQueue.add(
+        'send',
+        { accountId, phoneNumber, text: caption, conversationId } satisfies OutboundJobData,
+        { jobId: `out_mediafallback_${conversationId ?? phoneNumber}_${Date.now()}` },
+      );
+      logger.warn({ phoneNumber, conversationId }, '[Outbound] midia falhou - caption reenviado como texto');
+    }
+  };
+
   let sentId: string | null = null;
   if (imageUrl) {
-    const r = await sendMediaMessage({
-      settings,
-      instanceName: session.instanceName,
-      phoneNumber,
-      mediaUrl: imageUrl,
-      caption: caption ?? '',
-      mediaType: 'image',
-    });
-    sentId = r.messageId;
+    try {
+      const r = await sendMediaMessage({
+        settings,
+        instanceName: session.instanceName,
+        phoneNumber,
+        mediaUrl: imageUrl,
+        caption: caption ?? '',
+        mediaType: 'image',
+      });
+      sentId = r.messageId;
+    } catch (err) {
+      await mediaFallbackText();
+      throw err;
+    }
   } else if (mediaUrl && mediaType && mediaType !== 'audio') {
-    const r = await sendMediaMessage({
-      settings,
-      instanceName: session.instanceName,
-      phoneNumber,
-      mediaUrl,
-      caption: caption ?? '',
-      mediaType: mediaType as 'image' | 'video' | 'document',
-    });
-    sentId = r.messageId;
+    try {
+      const r = await sendMediaMessage({
+        settings,
+        instanceName: session.instanceName,
+        phoneNumber,
+        mediaUrl,
+        caption: caption ?? '',
+        mediaType: mediaType as 'image' | 'video' | 'document',
+      });
+      sentId = r.messageId;
+    } catch (err) {
+      await mediaFallbackText();
+      throw err;
+    }
   } else if (text) {
     const r = await sendTextMessage({
       settings,
@@ -699,7 +723,11 @@ export function startWorkers(): void {
 
   outboundWorker = new Worker<OutboundJobData>(
     'fce-outbound',
-    async (job) => processOutbound(job.data),
+    async (job) => {
+      const maxAttempts = job.opts.attempts ?? 5;
+      const isLast = (job.attemptsMade ?? 0) >= maxAttempts - 1;
+      return processOutbound(job.data, isLast);
+    },
     { connection: queueConnection, concurrency: 6 },
   );
 

@@ -403,6 +403,11 @@ async function applyDecision(
           and(
             eq(conversations.id, ctx.conversationId),
             eq(conversations.followupState, 'scheduled'),
+            // M2: NAO derruba a Bia se ela assumiu durante a janela do LLM
+            // (segundos). So reativa/envia se a Bia NAO respondeu nos ultimos
+            // 2min. Recovery de 'human' abandonado (>4h) passa normal; Bia
+            // que acabou de assumir (lastHumanAt recente) aborta o follow-up.
+            sql`(${conversations.lastHumanAt} IS NULL OR ${conversations.lastHumanAt} < NOW() - INTERVAL '2 minutes')`,
           ),
         )
         .returning({ id: conversations.id, attempts: conversations.followupAttempts });
@@ -410,7 +415,7 @@ async function applyDecision(
       if (transitioned.length === 0) {
         logger.info(
           { conversationId: ctx.conversationId },
-          '[Followup] race: cliente respondeu durante LLM - abortando recovery',
+          '[Followup] race: cliente/Bia respondeu durante LLM - abortando recovery',
         );
         return;
       }

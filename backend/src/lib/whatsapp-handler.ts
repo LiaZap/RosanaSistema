@@ -152,6 +152,10 @@ export async function handleMessageUpsert(
     columns: { id: true },
   });
   if (!contact) {
+    // H5: cliente novo manda 2 msgs juntas (texto+foto) -> 2 webhooks
+    // concorrentes, ambos veem null e inserem; o 2o violava o unique
+    // (contacts_account_phone_uniq) e estourava -> mensagem perdida.
+    // onConflictDoNothing + re-select torna idempotente.
     const [created] = await db
       .insert(contacts)
       .values({
@@ -159,9 +163,21 @@ export async function handleMessageUpsert(
         phoneNumber: phone,
         name: pushName ?? null,
       })
+      .onConflictDoNothing({ target: [contacts.accountId, contacts.phoneNumber] })
       .returning({ id: contacts.id });
-    contact = created;
-    logger.info({ accountId, phone }, '[WhatsApp] new contact');
+    if (created) {
+      contact = created;
+      logger.info({ accountId, phone }, '[WhatsApp] new contact');
+    } else {
+      contact = await db.query.contacts.findFirst({
+        where: and(eq(contacts.accountId, accountId), eq(contacts.phoneNumber, phone)),
+        columns: { id: true },
+      });
+    }
+  }
+  if (!contact) {
+    logger.error({ accountId, phone }, '[WhatsApp] contato nao resolvido apos conflict');
+    return { skipped: 'contact-unresolved' };
   }
 
   // 2. Pega conversation ativa
@@ -212,7 +228,21 @@ export async function handleMessageUpsert(
     logger.warn({ err: (err as Error).message }, '[WhatsApp] resetFollowup failed'),
   );
 
-  // Se humano assumiu, salva mas nao processa
+  // H6: conversa FECHADA pelo follow-up (cliente sumiu e foi encerrada).
+  // Se o cliente volta a escrever, ele re-engajou -> REABRE e processa.
+  // Sem isso, ficava presa em 'closed' pra sempre (nenhum caminho reativava):
+  // handleMessageUpsert pegava a conversa fechada, via status!=='nina' e so
+  // salvava sem enfileirar -> cliente nunca mais respondido.
+  if (conv.status === 'closed') {
+    await db
+      .update(conversations)
+      .set({ status: 'nina', followupState: 'idle', updatedAt: new Date() })
+      .where(eq(conversations.id, conv.id));
+    conv.status = 'nina';
+    logger.info({ conversationId: conv.id }, '[WhatsApp] conversa fechada reaberta pelo cliente');
+  }
+
+  // Se humano assumiu (human) ou operador pausou (paused), salva mas nao processa
   if (conv.status !== 'nina') {
     await saveMessage({
       conversationId: conv.id,
