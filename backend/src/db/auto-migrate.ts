@@ -112,6 +112,55 @@ const STATEMENTS: Array<{ label: string; run: () => Promise<unknown> }> = [
       await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS messages_wamid_uniq ON messages (account_id, whatsapp_message_id) WHERE whatsapp_message_id IS NOT NULL`);
     },
   },
+  // L2-sign — backfill de assinaturas HMAC nas URLs de midia privada ja salvas.
+  // /media/asset e /media/chat passaram a exigir ?sig=. URLs antigas (avatar,
+  // biblioteca, imagens de chat) quebrariam sem isso. Idempotente: so toca
+  // linhas com /media/(asset|chat)/ e ainda sem sig=.
+  {
+    label: 'backfill media URL signatures',
+    run: async () => {
+      const { signMediaKey } = await import('../lib/media-signing.js');
+
+      // Extrai a key crua de /media/(asset|chat)/<encoded>[?...] e devolve a URL
+      // com ?sig= anexado. null se nao for URL nossa ou se ja estiver assinada.
+      const sign = (raw: string | null): string | null => {
+        if (!raw || raw.includes('sig=')) return null;
+        const m = raw.match(/\/media\/(?:asset|chat)\/([^?#]+)/);
+        if (!m) return null;
+        let key: string;
+        try {
+          key = decodeURIComponent(m[1]!);
+        } catch {
+          return null;
+        }
+        return `${raw}${raw.includes('?') ? '&' : '?'}sig=${signMediaKey(key)}`;
+      };
+
+      const backfill = async (table: string, col: string): Promise<number> => {
+        const res = await db.execute(sql`
+          SELECT id, ${sql.raw(col)} AS url FROM ${sql.raw(table)}
+          WHERE (${sql.raw(col)} LIKE '%/media/asset/%' OR ${sql.raw(col)} LIKE '%/media/chat/%')
+            AND ${sql.raw(col)} NOT LIKE '%sig=%'
+        `);
+        const rows = (res as unknown as { rows: Array<{ id: string; url: string | null }> }).rows;
+        let n = 0;
+        for (const r of rows) {
+          const signed = sign(r.url);
+          if (!signed) continue;
+          await db.execute(
+            sql`UPDATE ${sql.raw(table)} SET ${sql.raw(col)} = ${signed} WHERE id = ${r.id}::uuid`,
+          );
+          n++;
+        }
+        return n;
+      };
+
+      const profiles = await backfill('profiles', 'avatar_url');
+      const library = await backfill('media_library', 'file_url');
+      const messages = await backfill('messages', 'media_url');
+      logger.info({ profiles, library, messages }, '[Migrate] backfill de assinaturas de midia');
+    },
+  },
 ];
 
 /**

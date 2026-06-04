@@ -8,6 +8,7 @@ import {
   streamProductImage,
 } from '../lib/minio-cache.js';
 import { logger } from '../lib/logger.js';
+import { verifyMediaSig } from '../lib/media-signing.js';
 
 const media = new Hono();
 
@@ -160,6 +161,9 @@ media.get('/proxy', async (c) => {
 // key vem URL-encoded: ex. chat/accountId/convId/123.jpg, avatar/userId/123.jpg
 async function serveMinioAsset(c: Context, key: string, allowedPrefixes: string[]) {
   if (!allowedPrefixes.some((p) => key.startsWith(p))) return c.notFound();
+  // Gating: a URL precisa estar assinada (HMAC ?sig=). Impede que alguem que
+  // descubra a key baixe midia por-conta. 404 (nao 403) pra nao confirmar a key.
+  if (!verifyMediaSig(key, c.req.query('sig'))) return c.notFound();
   try {
     const { getS3 } = await import('../lib/minio-cache.js');
     const { GetObjectCommand } = await import('@aws-sdk/client-s3');

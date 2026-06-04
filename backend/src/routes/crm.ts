@@ -876,7 +876,10 @@ crm.post('/conversations/:id/upload', requireAuth, async (c) => {
   }));
 
   const API_BASE = (process.env.API_URL || 'https://liamed-fce-api.leyiy3.easypanel.host').replace(/\/$/, '');
-  const publicUrl = `${API_BASE}/media/chat/${encodeURIComponent(key)}`;
+  // Assina a URL: /media/chat exige ?sig= (HMAC). O Evolution busca essa URL
+  // server-side pra enviar a imagem, entao a assinatura viaja junto na query.
+  const { appendMediaSig } = await import('../lib/media-signing.js');
+  const publicUrl = appendMediaSig(`${API_BASE}/media/chat/${encodeURIComponent(key)}`, key);
 
   // Salva no banco
   await saveMessage({
