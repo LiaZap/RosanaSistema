@@ -1,10 +1,80 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, FunnelChart as ReFunnelChart, Funnel, LabelList,
+} from 'recharts';
 import { api, ApiError } from '../lib/api';
 import AppShell from '../components/AppShell';
 import KPI from '../components/ui/KPI';
 import Section from '../components/ui/Section';
 import { CountUp } from '../components/ui/CountUp';
+
+// Lê as cores do tema atual (OKLCH) das CSS vars, e re-lê quando o usuário
+// troca tema/direção (cedro/indigo/brasa, light/dark) — pra os gráficos
+// Recharts (que precisam de cores concretas) acompanharem o tema.
+function readThemeColors() {
+  const s = getComputedStyle(document.documentElement);
+  const g = (n: string, fb: string) => s.getPropertyValue(n).trim() || fb;
+  return {
+    primary: g('--primary', '#3a7878'),
+    primaryText: g('--primary-text', '#2c5c5c'),
+    success: g('--success', '#3a9d5a'),
+    warning: g('--warning', '#c98a2e'),
+    danger: g('--danger', '#d14a3a'),
+    info: g('--info', '#3a78b5'),
+    dani: g('--dani', '#7c5cdb'),
+    text1: g('--text-1', '#1a1a1a'),
+    text2: g('--text-2', '#555'),
+    text3: g('--text-3', '#999'),
+    border: g('--border', '#e4e4e4'),
+    bgSurface: g('--bg-surface', '#fff'),
+  };
+}
+
+function useThemeColors() {
+  const [colors, setColors] = useState(readThemeColors);
+  useEffect(() => {
+    const read = () => setColors(readThemeColors());
+    const obs = new MutationObserver(read);
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme', 'data-dir', 'class'],
+    });
+    return () => obs.disconnect();
+  }, []);
+  return colors;
+}
+
+// Tooltip customizado (combina com o design, sem o box branco feio padrão)
+function ChartTooltip({ active, payload, label, suffix }: {
+  active?: boolean;
+  payload?: Array<{ value: number; name?: string; payload?: { label?: string } }>;
+  label?: string;
+  suffix?: string;
+}) {
+  if (!active || !payload || payload.length === 0) return null;
+  const p = payload[0];
+  return (
+    <div
+      style={{
+        background: 'var(--bg-surface)',
+        border: '1px solid var(--border-strong)',
+        borderRadius: 10,
+        padding: '8px 12px',
+        boxShadow: 'var(--sh-md)',
+        fontSize: 12,
+      }}
+    >
+      <div style={{ color: 'var(--text-3)', fontSize: 10.5, marginBottom: 2 }}>
+        {p.payload?.label ?? label ?? p.name}
+      </div>
+      <div style={{ color: 'var(--text-1)', fontWeight: 700, fontSize: 15 }}>
+        {p.value}{suffix ?? ''}
+      </div>
+    </div>
+  );
+}
 
 interface MeResponse {
   user: { id: string; email: string; isSuperAdmin: boolean };
@@ -131,9 +201,15 @@ export default function DashboardPage() {
     load();
   }, [navigate]);
 
-  const max7d = Math.max(...(kpis?.messagesLast7Days.map((d) => d.count) ?? [1]), 1);
+  const colors = useThemeColors();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
+
+  // Dados formatados pros graficos
+  const volumeData = (kpis?.messagesLast7Days ?? []).map((d) => {
+    const date = new Date(d.day + 'T12:00:00');
+    return { label: `${date.getDate()}/${date.getMonth() + 1}`, count: d.count };
+  });
 
   return (
     <AppShell
@@ -298,67 +374,54 @@ export default function DashboardPage() {
                 className="lg:col-span-2"
               >
                 <div
-                  className="rounded-xl p-5"
+                  className="rounded-xl p-4 pt-5"
                   style={{
                     background: 'var(--bg-surface)',
                     border: '1px solid var(--border)',
                     boxShadow: 'var(--sh-sm)',
                   }}
                 >
-                  <div className="flex items-end gap-2 h-44">
-                    {kpis.messagesLast7Days.length === 0 ? (
-                      <div
-                        className="flex-1 text-center text-sm self-center"
-                        style={{ color: 'var(--text-3)' }}
-                      >
-                        Sem dados ainda
-                      </div>
-                    ) : (
-                      kpis.messagesLast7Days.map((d) => {
-                        const h = Math.max(6, (d.count / max7d) * 100);
-                        const date = new Date(d.day + 'T12:00:00');
-                        const isToday = date.toDateString() === new Date().toDateString();
-                        return (
-                          <div
-                            key={d.day}
-                            className="flex-1 flex flex-col items-center gap-1.5 group"
-                          >
-                            {/* Tooltip */}
-                            <div
-                              className="text-[11px] font-bold opacity-0 group-hover:opacity-100 transition-opacity"
-                              style={{ color: 'var(--text-1)' }}
-                            >
-                              {d.count}
-                            </div>
-                            {/* Barra */}
-                            <div className="w-full flex-1 flex items-end">
-                              <div
-                                className="w-full rounded-t-md transition-all duration-300 group-hover:brightness-110"
-                                style={{
-                                  height: `${h}%`,
-                                  minHeight: 8,
-                                  background: isToday
-                                    ? 'linear-gradient(to top, oklch(0.55 0.16 350), oklch(0.65 0.18 340))'
-                                    : 'linear-gradient(to top, var(--primary), oklch(from var(--primary) l c h / 0.45))',
-                                  borderRadius: '6px 6px 2px 2px',
-                                }}
-                              />
-                            </div>
-                            {/* Label data */}
-                            <div
-                              className="text-[10px] font-medium"
-                              style={{
-                                color: isToday ? 'var(--primary-text)' : 'var(--text-3)',
-                                fontWeight: isToday ? 700 : 400,
-                              }}
-                            >
-                              {date.getDate()}/{date.getMonth() + 1}
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                  {volumeData.length === 0 ? (
+                    <div className="h-[200px] flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>
+                      Sem dados ainda
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={200}>
+                      <AreaChart data={volumeData} margin={{ top: 4, right: 8, bottom: 0, left: -18 }}>
+                        <defs>
+                          <linearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={colors.primary} stopOpacity={0.35} />
+                            <stop offset="100%" stopColor={colors.primary} stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke={colors.border} vertical={false} />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11, fill: colors.text3 }}
+                          axisLine={false}
+                          tickLine={false}
+                          dy={4}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: colors.text3 }}
+                          axisLine={false}
+                          tickLine={false}
+                          allowDecimals={false}
+                          width={40}
+                        />
+                        <Tooltip content={<ChartTooltip suffix=" msgs" />} cursor={{ stroke: colors.border }} />
+                        <Area
+                          type="monotone"
+                          dataKey="count"
+                          stroke={colors.primary}
+                          strokeWidth={2.5}
+                          fill="url(#volGrad)"
+                          dot={{ r: 3, fill: colors.primary, strokeWidth: 0 }}
+                          activeDot={{ r: 5, fill: colors.primary, stroke: colors.bgSurface, strokeWidth: 2 }}
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
               </Section>
 
@@ -467,16 +530,32 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Funil de conversão */}
-          {kpis?.funnel && (
-            <Section
-              title="Funil de conversão"
-              subtitle="Últimos 30 dias · cliente → ganho"
-            >
-              <div className="material p-5">
-                <FunnelChart funnel={kpis.funnel} />
-              </div>
-            </Section>
+          {/* Funil de conversão + Donut de status */}
+          {kpis && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+              {kpis.funnel && (
+                <Section
+                  title="Funil de conversão"
+                  subtitle="Últimos 30 dias · cliente → ganho"
+                  className="lg:col-span-2"
+                >
+                  <div
+                    className="rounded-xl p-5"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: 'var(--sh-sm)' }}
+                  >
+                    <ConversionFunnel funnel={kpis.funnel} colors={colors} />
+                  </div>
+                </Section>
+              )}
+              <Section title="Conversas por status" subtitle="Distribuição atual">
+                <div
+                  className="rounded-xl p-4"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', boxShadow: 'var(--sh-sm)' }}
+                >
+                  <StatusDonut conversations={kpis.conversations} colors={colors} />
+                </div>
+              </Section>
+            </div>
           )}
 
           {/* Cron + Health */}
@@ -535,79 +614,117 @@ export default function DashboardPage() {
   );
 }
 
-function FunnelChart({
+type ThemeColors = ReturnType<typeof readThemeColors>;
+
+function ConversionFunnel({
   funnel,
+  colors,
 }: {
   funnel: { contatos: number; qualificados: number; dealsCriados: number; ganhos: number; valorGanho: number };
+  colors: ThemeColors;
 }) {
-  const steps = [
-    { label: 'Contatos', value: funnel.contatos, color: 'var(--info)' },
-    { label: 'Qualificados', value: funnel.qualificados, color: 'var(--warning)' },
-    { label: 'Deals criados', value: funnel.dealsCriados, color: 'var(--primary)' },
-    { label: 'Ganhos', value: funnel.ganhos, color: 'var(--success)' },
+  const data = [
+    { label: 'Contatos', value: funnel.contatos, fill: colors.info },
+    { label: 'Qualificados', value: funnel.qualificados, fill: colors.warning },
+    { label: 'Deals criados', value: funnel.dealsCriados, fill: colors.primary },
+    { label: 'Ganhos', value: funnel.ganhos, fill: colors.success },
   ];
-  const max = Math.max(...steps.map((s) => s.value), 1);
-  const overallConv =
-    funnel.contatos > 0 ? Math.round((funnel.ganhos / funnel.contatos) * 100) : 0;
+  const overall = funnel.contatos > 0 ? Math.round((funnel.ganhos / funnel.contatos) * 100) : 0;
+  const allZero = data.every((d) => d.value === 0);
+
   return (
-    <div className="space-y-3">
-      <div className="flex items-baseline justify-between mb-2">
-        <span className="text-xs font-mono uppercase" style={{ color: 'var(--text-3)' }}>
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[11px] font-mono uppercase tracking-wider" style={{ color: 'var(--text-3)' }}>
           Taxa de conversão geral
         </span>
-        <span className="text-2xl font-bold mono" style={{ color: 'var(--primary-text)' }}>
-          {overallConv}%
+        <span className="text-2xl font-bold" style={{ color: 'var(--primary-text)' }}>
+          {overall}%
         </span>
       </div>
-      {steps.map((s, i) => {
-        const w = Math.max(8, (s.value / max) * 100);
-        const convFromPrev =
-          i === 0 ? null : steps[i - 1].value > 0 ? Math.round((s.value / steps[i - 1].value) * 100) : 0;
-        return (
-          <div key={s.label} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className="font-medium" style={{ color: 'var(--text-2)' }}>
-                {s.label}
-              </span>
-              <div className="flex items-center gap-2">
-                {convFromPrev != null && (
-                  <span className="font-mono" style={{ color: 'var(--text-3)' }}>
-                    {convFromPrev}%
-                  </span>
-                )}
-                <span className="font-bold mono tabular-nums" style={{ color: 'var(--text-1)' }}>
-                  {s.value}
-                </span>
-              </div>
-            </div>
-            <div
-              className="h-7 rounded-md transition-all"
-              style={{
-                width: `${w}%`,
-                background: `color-mix(in oklch, ${s.color} 25%, transparent)`,
-                borderLeft: `3px solid ${s.color}`,
-              }}
-            />
-          </div>
-        );
-      })}
+      {allZero ? (
+        <div className="h-[190px] flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>
+          Sem dados no período
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={210}>
+          <ReFunnelChart>
+            <Tooltip content={<ChartTooltip />} />
+            <Funnel dataKey="value" data={data} isAnimationActive stroke={colors.bgSurface} strokeWidth={2}>
+              <LabelList position="right" dataKey="label" fill={colors.text2} stroke="none" fontSize={12} />
+              <LabelList position="left" dataKey="value" fill={colors.text1} stroke="none" fontSize={13} fontWeight={700} />
+            </Funnel>
+          </ReFunnelChart>
+        </ResponsiveContainer>
+      )}
       {funnel.valorGanho > 0 && (
         <div
-          className="mt-3 p-2.5 rounded-md text-xs"
-          style={{
-            background: 'var(--success-bg)',
-            color: 'var(--success)',
-            border: '1px solid color-mix(in oklch, var(--success) 25%, transparent)',
-          }}
+          className="mt-1 p-2.5 rounded-md text-xs flex items-center gap-1.5"
+          style={{ background: 'var(--success-bg)', color: 'var(--success)' }}
         >
-          💰 Valor ganho:{' '}
-          <span className="font-mono font-bold tabular-nums">
-            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-              funnel.valorGanho,
-            )}
-          </span>
+          💰 Valor ganho:
+          <span className="font-bold tabular-nums">{fmtBRL(funnel.valorGanho)}</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatusDonut({
+  conversations,
+  colors,
+}: {
+  conversations: { nina: number; human: number; paused: number; closed: number };
+  colors: ThemeColors;
+}) {
+  const data = [
+    { label: 'DANI', value: conversations.nina, fill: colors.dani },
+    { label: 'Humano', value: conversations.human, fill: colors.success },
+    { label: 'Pausado', value: conversations.paused, fill: colors.warning },
+    { label: 'Fechado', value: conversations.closed, fill: colors.text3 },
+  ].filter((d) => d.value > 0);
+  const total = data.reduce((a, b) => a + b.value, 0);
+
+  if (total === 0) {
+    return (
+      <div className="h-[180px] flex items-center justify-center text-sm" style={{ color: 'var(--text-3)' }}>
+        Nenhuma conversa
+      </div>
+    );
+  }
+  return (
+    <div>
+      <ResponsiveContainer width="100%" height={150}>
+        <PieChart>
+          <Pie
+            data={data}
+            dataKey="value"
+            nameKey="label"
+            cx="50%"
+            cy="50%"
+            innerRadius={42}
+            outerRadius={64}
+            paddingAngle={2}
+            strokeWidth={0}
+          >
+            {data.map((d, i) => (
+              <Cell key={i} fill={d.fill} />
+            ))}
+          </Pie>
+          <Tooltip content={<ChartTooltip />} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 mt-1">
+        {data.map((d) => (
+          <div key={d.label} className="flex items-center gap-1.5 text-[11.5px]">
+            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: d.fill }} />
+            <span style={{ color: 'var(--text-2)' }}>{d.label}</span>
+            <span className="ml-auto font-bold tabular-nums" style={{ color: 'var(--text-1)' }}>
+              {d.value}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
