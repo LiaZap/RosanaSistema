@@ -169,9 +169,10 @@ export function startCronJobs(): void {
       try {
         const { db } = await import('../db/client.js');
         const { conversations, ninaSettings, contacts, messages } = await import('../db/schema.js');
-        const { sql, eq, and, isNull, desc } = await import('drizzle-orm');
+        const { sql, eq, and, isNull, desc, inArray } = await import('drizzle-orm');
         const { aiReplyQueue } = await import('./queues.js');
         const { getRedis } = await import('./queues.js');
+        const { restoreBuffer } = await import('./inbound-buffer.js');
 
         const settings = await db
           .select({
@@ -238,24 +239,29 @@ export function startCronJobs(): void {
                   .limit(1);
                 if (!ct[0]) continue;
 
-                // Usa bufferWindowId existente ou gera novo
-                let windowId = lastMsg[0].bufferWindowId;
-                if (!windowId) {
-                  const { randomUUID } = await import('crypto');
-                  windowId = randomUUID();
-                  await db
-                    .update(messages)
-                    .set({ bufferWindowId: windowId })
-                    .where(
-                      and(
-                        eq(messages.conversationId, conv.id),
-                        isNull(messages.bufferWindowId),
-                        eq(messages.fromType, 'user'),
-                      ),
-                    );
-                  // Persiste no buffer Redis pra drenar
-                  await redis.set(`fce:buf:${conv.id}:win`, windowId, 'EX', 600);
-                }
+                // M4: pega as msgs do user pendentes (sem bufferWindowId) e
+                // popula o buffer COMPLETO via restoreBuffer (LIST + win + last).
+                // Antes so gravava ':win' -> drainBuffer lia LIST vazia -> a
+                // mensagem ficava orfa e a DANI nao respondia pos-cooldown.
+                const { randomUUID } = await import('crypto');
+                const windowId = lastMsg[0].bufferWindowId ?? randomUUID();
+                const pendingUser = await db
+                  .select({ id: messages.id })
+                  .from(messages)
+                  .where(
+                    and(
+                      eq(messages.conversationId, conv.id),
+                      eq(messages.fromType, 'user'),
+                      isNull(messages.bufferWindowId),
+                    ),
+                  )
+                  .orderBy(messages.createdAt);
+                const ids = pendingUser.length > 0 ? pendingUser.map((m) => m.id) : [lastMsg[0].id];
+                await db
+                  .update(messages)
+                  .set({ bufferWindowId: windowId })
+                  .where(inArray(messages.id, ids));
+                await restoreBuffer({ conversationId: conv.id, windowId, messageIds: ids });
 
                 await aiReplyQueue.add(
                   'process',
