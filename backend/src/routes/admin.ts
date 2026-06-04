@@ -304,4 +304,43 @@ admin.patch('/users/:userId/password', async (c) => {
   return c.json({ ok: true });
 });
 
+// ── PATCH /admin/users/:userId/super-admin ───────────
+// Promove/rebaixa um usuario a super-admin (god mode: ve todas as contas,
+// custo de tokens, painel de logins). So super-admin pode chamar (gate global
+// no topo do arquivo). Guard: nao deixa rebaixar a si mesmo (evita lockout).
+const superAdminSchema = z.object({
+  isSuperAdmin: z.boolean(),
+});
+
+admin.patch('/users/:userId/super-admin', async (c) => {
+  const { userId } = c.req.param();
+  const me = getUser(c);
+  const body = await c.req.json();
+  const parsed = superAdminSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(', '));
+  }
+
+  const { isSuperAdmin } = parsed.data;
+
+  if (userId === me.id && !isSuperAdmin) {
+    throw new ForbiddenError('Voce nao pode remover seu proprio acesso de super-admin');
+  }
+
+  const [user] = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  if (!user) throw new NotFoundError('Usuario nao encontrado');
+
+  await db.update(users).set({ isSuperAdmin }).where(eq(users.id, userId));
+
+  logger.info(
+    { userId, isSuperAdmin, by: me.id },
+    '[Admin] flag super-admin alterada',
+  );
+  return c.json({ ok: true, userId, isSuperAdmin });
+});
+
 export default admin;

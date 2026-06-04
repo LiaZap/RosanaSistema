@@ -174,6 +174,18 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function handleToggleSuperAdmin(userId: string, email: string, current: boolean) {
+    const next = !current;
+    const verb = next ? 'promover' : 'rebaixar';
+    if (!confirm(`Deseja ${verb} ${email} ${next ? 'a' : 'de'} Super Admin?\n\nSuper Admin tem acesso total: todas as contas, custo de tokens e gestão de logins.`)) return;
+    try {
+      await api.patch(`/admin/users/${userId}/super-admin`, { isSuperAdmin: next });
+      await loadAccounts();
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Erro ao alterar super-admin');
+    }
+  }
+
   return (
     <AppShell
       title="Gestão de usuários"
@@ -339,6 +351,14 @@ export default function AdminUsersPage() {
                                 title="Redefinir senha"
                               >
                                 🔑 senha
+                              </button>
+                              <button
+                                onClick={() => handleToggleSuperAdmin(m.userId, m.email, m.isSuperAdmin)}
+                                className="btn btn-ghost btn-sm text-xs px-2 py-1"
+                                style={{ color: m.isSuperAdmin ? 'var(--warning, #b8860b)' : 'var(--dani-text)' }}
+                                title={m.isSuperAdmin ? 'Rebaixar de Super Admin' : 'Promover a Super Admin (acesso total)'}
+                              >
+                                {m.isSuperAdmin ? '★ remover super' : '☆ super admin'}
                               </button>
                               {!m.isSuperAdmin && (
                                 <button
