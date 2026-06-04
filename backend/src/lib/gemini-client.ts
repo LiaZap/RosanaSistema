@@ -63,6 +63,20 @@ export interface GenerateResult {
 // 4 iterations: deixa Gemini fazer 3-4 tool calls e ainda ter espaço pra texto
 const MAX_TOOL_ITERATIONS = 4;
 
+// H1: teto de tempo por chamada Gemini. Sem isso, um socket idle trava o
+// worker ai-reply pra sempre (ocupa 1 dos 4 slots; 4 stalls param a DANI).
+const GEMINI_TIMEOUT_MS = 30_000;
+
+/** Promise.race com timeout que rejeita — defesa extra alem do timeout do SDK. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Gemini timeout apos ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 /**
  * Gera resposta da DANI com suporte a function calling.
  *
@@ -86,20 +100,24 @@ export async function generateDaniReply(opts: {
     throw new Error('GEMINI_API_KEY is not configured on the backend');
   }
 
-  const model = client.getGenerativeModel({
-    model: resolveModelName(opts.modelMode),
-    systemInstruction: opts.systemPrompt,
-    generationConfig: {
-      temperature: 0.7,
-      topP: 0.95,
-      // 2048 evita truncamento em respostas com 3+ produtos ou consultorias.
-      // Observado: 800 cortava em 600+ chars (cólicas, consultoria).
-      maxOutputTokens: 2048,
+  const model = client.getGenerativeModel(
+    {
+      model: resolveModelName(opts.modelMode),
+      systemInstruction: opts.systemPrompt,
+      generationConfig: {
+        temperature: 0.7,
+        topP: 0.95,
+        // 2048 evita truncamento em respostas com 3+ produtos ou consultorias.
+        // Observado: 800 cortava em 600+ chars (cólicas, consultoria).
+        maxOutputTokens: 2048,
+      },
+      ...(opts.tools && opts.tools.length > 0
+        ? { tools: [{ functionDeclarations: opts.tools }] }
+        : {}),
     },
-    ...(opts.tools && opts.tools.length > 0
-      ? { tools: [{ functionDeclarations: opts.tools }] }
-      : {}),
-  });
+    // H1: timeout no nivel do SDK (cria AbortController internamente).
+    { timeout: GEMINI_TIMEOUT_MS },
+  );
 
   const history: Content[] = opts.history.map((t) => ({
     role: t.role,
@@ -111,15 +129,34 @@ export async function generateDaniReply(opts: {
   const toolCalls: ToolCallRecord[] = [];
   let iterations = 0;
 
-  // Primeira mensagem do user
-  let result = await chat.sendMessage(opts.userMessage);
+  // Primeira mensagem do user — withTimeout como defesa extra (se o SDK
+  // nao abortar, a promise rejeita e o worker retenta via attempts).
+  let result = await withTimeout(chat.sendMessage(opts.userMessage), GEMINI_TIMEOUT_MS);
 
   while (iterations < MAX_TOOL_ITERATIONS) {
-    const calls = result.response.functionCalls();
+    // H3: functionCalls()/text() LANCAM quando finishReason=SAFETY/RECITATION.
+    // Sem try-catch, a excecao sobe ao worker que so loga e da return ->
+    // DANI fica muda. Aqui capturamos e tratamos como "sem texto" -> fallback.
+    let calls;
+    try {
+      calls = result.response.functionCalls();
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, '[Gemini] functionCalls() lancou (provavel SAFETY/RECITATION)');
+      calls = undefined;
+    }
 
     // Sem function calls -> resposta final
     if (!calls || calls.length === 0) {
-      const text = result.response.text();
+      let text = '';
+      try {
+        text = result.response.text();
+      } catch (err) {
+        // text() so lanca em bloqueio do Gemini (SAFETY/RECITATION) — NUNCA
+        // em silencio intencional (esse vem como '' normal). Logo, um fallback
+        // aqui e sempre apropriado: melhor reengajar que ghostar o cliente.
+        logger.warn({ err: (err as Error).message }, '[Gemini] text() lancou (SAFETY/RECITATION) - usando fallback');
+        text = 'Oi! Me conta um pouquinho mais sobre o que voce procura, assim consigo te ajudar certinho.';
+      }
       const candidate = result.response.candidates?.[0];
       const finishReason = candidate?.finishReason;
       const safetyRatings = candidate?.safetyRatings;
@@ -193,7 +230,7 @@ export async function generateDaniReply(opts: {
     );
 
     // Envia resultados pro Gemini
-    result = await chat.sendMessage(toolResponses);
+    result = await withTimeout(chat.sendMessage(toolResponses), GEMINI_TIMEOUT_MS);
     iterations++;
   }
 

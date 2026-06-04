@@ -31,12 +31,15 @@ async function checkLimit(opts: {
       await redis.expire(opts.key, opts.windowSeconds);
     }
     if (current > opts.limit) {
+      // M1: reverte o incremento desta tentativa bloqueada — senao cada
+      // retry inflava o contador e mantinha o gate fechado alem do necessario.
+      await redis.decr(opts.key).catch(() => {});
       const ttl = await redis.ttl(opts.key);
       return {
         allowed: false,
-        current,
+        current: current - 1,
         limit: opts.limit,
-        retryAfterSeconds: Math.max(1, ttl),
+        retryAfterSeconds: Math.max(1, ttl > 0 ? ttl : opts.windowSeconds),
       };
     }
     return { allowed: true, current, limit: opts.limit };

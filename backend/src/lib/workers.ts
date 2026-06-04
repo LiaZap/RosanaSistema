@@ -20,6 +20,7 @@ import {
 import {
   pushToBuffer,
   drainBuffer,
+  restoreBuffer,
   shouldFlush,
 } from './inbound-buffer.js';
 import { loadHistory, saveMessage } from './dani-conversations.js';
@@ -423,8 +424,15 @@ async function processAiReply(data: AiReplyJobData): Promise<void> {
       history,
     });
   } catch (err) {
-    logger.error({ conversationId, err: (err as Error).message }, '[AiReply] DANI failed');
-    return;
+    // H2: o buffer ja foi drenado (destrutivo). Se a DANI falhou (Gemini
+    // timeout/429/500), restauramos o buffer e damos THROW pra o BullMQ
+    // retentar (attempts). Sem isso, a msg ficava no banco mas SEM resposta
+    // pra sempre (job marcado completo, buffer apagado).
+    logger.error({ conversationId, err: (err as Error).message }, '[AiReply] DANI failed - restaurando buffer pra retry');
+    await restoreBuffer({ conversationId, windowId: bufferWindowId, messageIds }).catch((e) =>
+      logger.warn({ conversationId, err: (e as Error).message }, '[AiReply] falha ao restaurar buffer'),
+    );
+    throw err;
   }
 
   // 9. Se DANI decidiu nao responder (silencio absoluto: comprovante,
@@ -606,11 +614,14 @@ async function processOutbound(data: OutboundJobData): Promise<void> {
   // Sprint 11: rate-limit outbound por contato (max 30/min)
   const rl = await outboundPerContact(phoneNumber);
   if (!rl.allowed) {
+    // M1: NAO descartar (return marcava o job completo e a msg sumia).
+    // Throw -> BullMQ retenta (attempts:5 com backoff), o envio acontece
+    // quando a janela de rate-limit abrir.
     logger.warn(
       { phoneNumber, current: rl.current, limit: rl.limit },
-      '[Outbound] rate-limited - skipping send',
+      '[Outbound] rate-limited - reenfileirando (retry)',
     );
-    return;
+    throw new Error(`rate-limited (${rl.current}/${rl.limit}) - retry`);
   }
 
   const settings = await getEvolutionSettings(accountId);

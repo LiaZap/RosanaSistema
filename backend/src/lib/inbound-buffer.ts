@@ -114,6 +114,30 @@ export async function drainBuffer(conversationId: string): Promise<{
 }
 
 /**
+ * Restaura um buffer drenado (H2). Usado quando o processamento da DANI
+ * FALHA depois do drain destrutivo: re-cria a janela + a lista de IDs pra
+ * que o retry (BullMQ attempts) reprocesse, em vez de perder a mensagem.
+ * lastAt antigo (default agora-2min) forca flush imediato no retry.
+ */
+export async function restoreBuffer(opts: {
+  conversationId: string;
+  windowId: string;
+  messageIds: string[];
+  lastAtMs?: number;
+}): Promise<void> {
+  if (opts.messageIds.length === 0) return;
+  const redis = getRedis();
+  const bufKey = keyBuf(opts.conversationId);
+  await redis.del(bufKey);
+  for (const id of opts.messageIds) {
+    await redis.rpush(bufKey, id);
+  }
+  await redis.set(keyWindow(opts.conversationId), opts.windowId, 'EX', TTL_SECONDS);
+  await redis.set(keyLast(opts.conversationId), String(opts.lastAtMs ?? Date.now() - 120_000), 'EX', TTL_SECONDS);
+  await redis.expire(bufKey, TTL_SECONDS);
+}
+
+/**
  * Decide se eh hora de flushar ou nao com base no tempo desde a ultima msg.
  *
  * windowMs: tempo de silencio que dispara flush (default 15000ms = 15s)
