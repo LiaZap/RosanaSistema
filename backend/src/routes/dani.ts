@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { requireAuth, requireAdmin, getUser } from '../middleware/auth.js';
 import { ValidationError, NotFoundError, ForbiddenError } from '../lib/errors.js';
 import { db } from '../db/client.js';
@@ -176,6 +176,47 @@ dani.post('/conversations', requireAuth, async (c) => {
   const conv = await createConversation({ accountId, contactId: contact.id });
 
   return c.json({ conversationId: conv.id });
+});
+
+// ── GET /dani/conversations ─────────────────────────
+// Lista as conversas de TESTE do usuario (contato test:<userId>), com
+// preview da ultima msg. Alimenta a lateral propria do Teste de chat,
+// separada das conversas reais.
+dani.get('/conversations', requireAuth, async (c) => {
+  const user = getUser(c);
+  const accountId = c.req.query('accountId');
+  if (!accountId) throw new ValidationError('accountId required');
+  await assertAccountMember(user.id, accountId);
+
+  const contact = await getOrCreateTestContact({
+    accountId,
+    userId: user.id,
+    userEmail: user.email,
+  });
+
+  const rows = await db
+    .select({
+      id: conversations.id,
+      createdAt: conversations.createdAt,
+      lastMessageAt: conversations.lastMessageAt,
+      lastMessage: sql<string | null>`last_msg.content`,
+    })
+    .from(conversations)
+    .leftJoin(
+      sql`lateral (
+        select content
+        from ${messages}
+        where conversation_id = ${conversations.id}
+        order by created_at desc
+        limit 1
+      ) as last_msg`,
+      sql`true`,
+    )
+    .where(and(eq(conversations.accountId, accountId), eq(conversations.contactId, contact.id)))
+    .orderBy(desc(conversations.lastMessageAt), desc(conversations.createdAt))
+    .limit(50);
+
+  return c.json({ conversations: rows });
 });
 
 // ── POST /dani/conversations/:id/reactivate ─────────

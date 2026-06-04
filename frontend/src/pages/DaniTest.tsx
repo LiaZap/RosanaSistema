@@ -36,6 +36,13 @@ interface MessagesResponse {
   messages: Array<{ id: string; role: 'user' | 'model'; text: string; createdAt: string }>;
 }
 
+interface TestConv {
+  id: string;
+  createdAt: string;
+  lastMessageAt: string | null;
+  lastMessage: string | null;
+}
+
 const CONV_STORAGE_KEY = 'fce_dani_conversation_id';
 
 function ImageAttachment({ url, alt }: { url: string; alt: string }) {
@@ -88,7 +95,19 @@ export default function DaniTestPage() {
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testConvs, setTestConvs] = useState<TestConv[]>([]);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  async function loadTestConvs(accId: string) {
+    try {
+      const data = await api.get<{ conversations: TestConv[] }>(
+        `/dani/conversations?accountId=${accId}`,
+      );
+      setTestConvs(data.conversations);
+    } catch {
+      // silencioso
+    }
+  }
 
   // Carrega user
   useEffect(() => {
@@ -96,7 +115,11 @@ export default function DaniTestPage() {
       .get<MeResponse>('/auth/me')
       .then((data) => {
         setMe(data);
-        if (data.accounts[0]) setAccountId(data.accounts[0].accountId);
+        if (data.accounts[0]) {
+          const accId = data.accounts[0].accountId;
+          setAccountId(accId);
+          loadTestConvs(accId);
+        }
       })
       .catch((e) => {
         if (e instanceof ApiError && e.status === 401) navigate('/auth');
@@ -166,6 +189,7 @@ export default function DaniTestPage() {
         ...newTurns,
         { role: 'model', text: res.reply, meta: res.meta, attachments: res.attachments },
       ]);
+      loadTestConvs(accountId); // atualiza preview na lateral
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Erro desconhecido';
       setError(msg);
@@ -183,30 +207,83 @@ export default function DaniTestPage() {
       setConversationId(res.conversationId);
       setTurns([]);
       setError(null);
+      loadTestConvs(accountId);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Falha ao criar conversa');
     }
   }
 
-  void me;
-  return (
-    <AppShell
-      title="DANI - Teste"
-      subtitle={conversationId ? `conv ${conversationId.slice(0, 8)}...` : 'sem conversa'}
-      actions={
-        <button
-          onClick={handleNewConversation}
-          className="px-3 py-2 rounded-lg border border-border text-sm
-                     text-muted-foreground hover:bg-card transition-colors"
-        >
-          Nova conversa
-        </button>
-      }
-    >
-      <div className="space-y-6 max-w-3xl mx-auto">
+  function openConv(id: string) {
+    if (id === conversationId) return;
+    localStorage.setItem(CONV_STORAGE_KEY, id);
+    setConversationId(id);
+    setTurns([]);
+    setError(null);
+  }
 
-        {/* Chat */}
-        <div className="glass rounded-xl p-5 min-h-[400px] max-h-[60vh] overflow-y-auto space-y-3">
+  void me;
+
+  function previewLabel(c: TestConv): string {
+    if (c.lastMessage) return c.lastMessage.slice(0, 38);
+    return 'conversa vazia';
+  }
+
+  return (
+    <AppShell title="DANI - Teste" subtitle="Ambiente de teste · separado dos contatos reais" bare>
+      <div className="flex flex-1 min-h-0">
+        {/* ─── LATERAL: conversas de teste (so do teste, nao mistura) ─── */}
+        <div
+          className="w-[280px] shrink-0 flex flex-col min-h-0 border-r"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div className="p-3 border-b" style={{ borderColor: 'var(--border)' }}>
+            <button
+              onClick={handleNewConversation}
+              className="btn btn-primary btn-sm w-full"
+            >
+              + Nova conversa de teste
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1 min-h-0">
+            {testConvs.length === 0 && (
+              <p className="text-center text-xs py-8" style={{ color: 'var(--text-3)' }}>
+                Nenhuma conversa de teste ainda.
+              </p>
+            )}
+            {testConvs.map((c) => {
+              const active = c.id === conversationId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => openConv(c.id)}
+                  className="w-full text-left rounded-lg px-3 py-2 transition-all"
+                  style={{
+                    background: active ? 'var(--primary-tint)' : 'var(--bg-surface)',
+                    border: `1px solid ${active ? 'var(--primary)' : 'var(--border)'}`,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2 mb-0.5">
+                    <span className="text-[12px] font-semibold font-mono truncate" style={{ color: 'var(--text-1)' }}>
+                      #{c.id.slice(0, 6)}
+                    </span>
+                    <span className="text-[10px] tabular-nums shrink-0" style={{ color: 'var(--text-3)' }}>
+                      {c.lastMessageAt
+                        ? new Date(c.lastMessageAt).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="text-[11.5px] truncate" style={{ color: 'var(--text-2)' }}>
+                    {previewLabel(c)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ─── CHAT ─── */}
+        <div className="flex-1 flex flex-col min-h-0" style={{ background: 'var(--bg-app)' }}>
+          <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-3">
           {loadingHistory && (
             <p className="text-muted-foreground text-sm text-center py-12">
               Carregando histórico...
@@ -290,8 +367,11 @@ export default function DaniTestPage() {
           >
             Enviar
           </button>
-        </form>
+          </form>
+        </div>
+        {/* fim chat col */}
       </div>
+      {/* fim split */}
     </AppShell>
   );
 }

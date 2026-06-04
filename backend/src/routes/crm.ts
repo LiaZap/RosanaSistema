@@ -91,6 +91,11 @@ crm.get('/conversations', requireAuth, async (c) => {
       sql`(${conversations.lastMessageAt} >= ${periodStart} OR ${conversations.createdAt} >= ${periodStart})`,
     );
   }
+  // Exclui conversas de TESTE (contato test:<userId>) pra nao misturar com os
+  // contatos reais no dia a dia. As de teste tem a propria aba no /dani.
+  whereClauses.push(
+    sql`(${contacts.phoneNumber} IS NULL OR ${contacts.phoneNumber} NOT LIKE 'test:%')`,
+  );
 
   const rows = await db
     .select({
@@ -365,7 +370,10 @@ crm.get('/stats', requireAuth, async (c) => {
       count: sql<number>`cast(count(*) as int)`,
     })
     .from(conversations)
-    .where(eq(conversations.accountId, accountId))
+    .innerJoin(contacts, eq(contacts.id, conversations.contactId))
+    // Mesma exclusao de conversas de teste do GET /crm/conversations,
+    // pra os contadores baterem com a lista.
+    .where(and(eq(conversations.accountId, accountId), sql`${contacts.phoneNumber} NOT LIKE 'test:%'`))
     .groupBy(conversations.status);
 
   const stats = { nina: 0, human: 0, paused: 0, closed: 0, total: 0 };
