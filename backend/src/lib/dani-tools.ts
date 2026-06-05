@@ -124,7 +124,9 @@ export interface BuscarProdutosToolResult {
     preco: number | null;
     preco_promocional: number | null;
     disponivel: boolean;
-    estoque: number;
+    // escassez: poucas unidades em estoque. Serve pra DANI criar urgencia
+    // ("ultimas unidades") SEM nunca revelar a quantidade exata (pedido Rosana).
+    escassez: boolean;
     marca: string | null;
     estoque_realtime?: boolean; // true se top-3 conferido agora
   }>;
@@ -136,7 +138,8 @@ export interface BuscarProdutoDetalheToolResult {
   preco?: number | null;
   preco_promocional?: number | null;
   disponivel?: boolean;
-  estoque?: number;
+  // escassez: poucas unidades. Cria urgencia SEM revelar a quantidade exata.
+  escassez?: boolean;
   marca?: string | null;
   imagem?: string | null;
   descricao_curta?: string | null;
@@ -339,7 +342,7 @@ export const TOOL_HANDLERS: Record<
         preco: p.preco,
         preco_promocional: p.precoPromocional,
         disponivel: p.disponivel,
-        estoque: p.estoque,
+        escassez: p.disponivel && p.estoque > 0 && p.estoque <= 3,
         marca: p.marca,
         estoque_realtime: p.stockSource === 'realtime',
       })),
@@ -368,7 +371,7 @@ export const TOOL_HANDLERS: Record<
       preco: result.preco,
       preco_promocional: result.precoPromocional,
       disponivel: result.disponivel,
-      estoque: result.estoque,
+      escassez: !!result.disponivel && (result.estoque ?? 0) > 0 && (result.estoque ?? 0) <= 3,
       marca: result.marca,
       imagem: result.imagem,
       descricao_curta: result.descricaoCurta,

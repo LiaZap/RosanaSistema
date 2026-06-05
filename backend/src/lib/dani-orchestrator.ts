@@ -290,8 +290,14 @@ export async function processDaniMessage(
   // Match no INICIO ou MSG INTEIRA contendo palavra-chave de despedida
   const FAREWELL_KEYWORDS =
     /(^|\b)(tchau|obrigad[oa]|brigad[oa]|valeu|vlw|flw|fui|ate logo|ate mais|ate amanha|ate depois|obg|tmj|deixa pra la|deixa quieto)(\b|[!.,?]|$)/i;
+  // Recusa de oferta ("nao", "nao obrigada", "nao quero") NAO e despedida: e
+  // objecao pra DANI quebrar na hora (pedido da Rosana). Se tem negacao, NUNCA
+  // tratamos como despedida — deixamos a resposta da DANI passar.
+  const hasRejection =
+    /\bn[ãa]o\b/i.test(userMsgNorm) || /\b(nem|nunca|jamais)\b/i.test(userMsgNorm);
   const isFarewell =
     FAREWELL_KEYWORDS.test(userMsgNorm) &&
+    !hasRejection && // recusa nunca e despedida
     userMsgNorm.length < 80 && // msg curta sem pergunta no meio
     !/\?/.test(userMsgNorm); // sem pergunta = nao quer info, so despedida
 
@@ -386,6 +392,19 @@ export async function processDaniMessage(
         logger.warn({ err: (err as Error).message }, '[DANI] fallback reply failed');
       }
     }
+  }
+
+  // REDE DE SEGURANCA (pedido da Rosana): recusa de oferta NUNCA pode ficar
+  // sem resposta. Se o cliente recusou ("nao", "nao obrigada") e mesmo assim a
+  // DANI ficou muda (sem texto, sem foto, sem escalacao), mandamos ao menos um
+  // fechamento cortes com porta aberta. A quebra de objecao real e papel do
+  // modelo (via prompt); isto e so a garantia de ultimo caso pra nunca sumir.
+  if (!finalReply && hasRejection && attachments.length === 0) {
+    finalReply = 'Ah, sem problemas! Quer que eu te mostre mais alguma opção?';
+    logger.info(
+      { userMsg: message.slice(0, 50) },
+      '[DANI] rede de seguranca: recusa sem resposta - fechamento cortes aplicado',
+    );
   }
 
   return {

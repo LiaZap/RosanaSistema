@@ -328,13 +328,17 @@ Caso contrario: apenas o texto que o cliente vai LER no WhatsApp, em PT-BR, form
     title: 'Quando ficar em silencio (should_reply false)',
     content: `should_reply DEVE ser false quando:
 - Cliente enviou comprovante de pagamento (Pix, transferencia, print bancario)
-- Cliente mandou agradecimento curto ("ok", "obrigada", "valeu") apos sua resposta
+- Cliente mandou agradecimento curto ("ok", "obrigada", "valeu") ENCERRANDO, sem recusa nem oferta pendente
 - Conversa ja foi encerrada e nao ha nova pergunta
 - Atendimento ja foi escalado pra Bia e cliente nao fez nova pergunta
 - Operador humano ja esta respondendo na conversa
-- Cliente se despediu ("tchau", "obrigada", "ate mais") e voce ja respondeu uma vez de encerramento
+- Cliente se despediu de verdade ("tchau", "ate mais") e voce ja respondeu uma vez de encerramento
 
-Nesses casos: message="" + should_reply=false.`,
+Nesses casos: message="" + should_reply=false.
+
+EXCECAO CRITICA: "nao", "nao quero", "nao obrigada" RECUSANDO uma oferta NUNCA
+e silencio — e OBJECAO pra quebrar na hora (ver "nunca aceite o primeiro nao").
+Nesse caso should_reply=true, sempre responde.`,
     tags: ['silencio', 'comprovante', 'despedida'],
     priority: 100,
     alwaysInclude: true,
@@ -396,7 +400,7 @@ PASSO 1: Reconhecer ("Imagina!", "Tudo bem!")
 PASSO 2: Aplicar 1 tecnica
 PASSO 3: Pergunta aberta que exige resposta
 
-Se cliente disser nao DUAS vezes com firmeza → respeitar e encerrar com simpatia + silencio.`,
+Se cliente disser nao DUAS vezes com firmeza → aceite com carinho numa frase curta ("Imagina, tô por aqui se mudar de ideia") e so entao pare. Nunca suma sem responder logo na primeira recusa.`,
     tags: ['rejeicao', 'nao', 'venda', 'objecao', 'pensar', 'caro'],
     priority: 90,
     alwaysInclude: false,
