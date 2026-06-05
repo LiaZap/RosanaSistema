@@ -226,9 +226,36 @@ async function processInbound(data: InboundJobData): Promise<void> {
   );
 
   // 6. Agenda ai-reply delayed.
-  // Se nao for nova janela, ele ja foi agendado por uma msg anterior - a logica
-  // no ai-reply vai detectar que ainda tem msg recente e reagendar sozinho.
-  // Mas pra garantir, agendamos sempre (jobId determinístico previne duplicação).
+  // jobId deterministico (ai_<windowId>) = dedup: varias msgs na mesma janela
+  // compartilham 1 job, em vez de 1 job por mensagem.
+  //
+  // ARMADILHA: se esse job terminou em 'failed' ou 'completed' (ex: Gemini caiu
+  // e esgotou os attempts), ele vira um "tombstone". O BullMQ IGNORA qualquer
+  // add() com um jobId ja existente — inclusive jobs failed/completed — entao a
+  // janela nunca mais e reagendada e o buffer cresce pra sempre. Por isso
+  // removemos o job terminal antes de re-adicionar (mantendo o dedup pros que
+  // ainda estao delayed/active/waiting). Assim a janela se recupera sozinha na
+  // proxima mensagem que chegar.
+  const aiJobId = `ai_${buf.windowId}`;
+  try {
+    const existing = await aiReplyQueue.getJob(aiJobId);
+    if (existing) {
+      const state = await existing.getState();
+      if (state === 'failed' || state === 'completed') {
+        await existing.remove();
+        logger.warn(
+          { conversationId, windowId: buf.windowId, state },
+          '[Inbound] job ai-reply estava em estado terminal (tombstone) - removido pra reagendar',
+        );
+      }
+    }
+  } catch (e) {
+    logger.warn(
+      { conversationId, windowId: buf.windowId, err: (e as Error).message },
+      '[Inbound] falha ao checar job ai-reply existente (segue pro add)',
+    );
+  }
+
   await aiReplyQueue.add(
     'process',
     {
@@ -240,7 +267,7 @@ async function processInbound(data: InboundJobData): Promise<void> {
     } satisfies AiReplyJobData,
     {
       delay: windowMs,
-      jobId: `ai_${buf.windowId}`, // mesmo windowId = mesmo job (idempotente)
+      jobId: aiJobId, // mesmo windowId = mesmo job (idempotente, exceto tombstone limpo acima)
       removeOnComplete: { age: 3600, count: 200 },
     },
   );
@@ -709,6 +736,40 @@ async function processOutbound(data: OutboundJobData, isLastAttempt = false): Pr
 }
 
 /**
+ * Recuperacao no boot: retenta jobs ai-reply presos em 'failed'.
+ *
+ * Contexto: quando o Gemini cai (sem credito/quota), os jobs ai-reply esgotam
+ * os attempts e ficam em 'failed' (guardados 24h por removeOnFail). O buffer da
+ * conversa foi restaurado (H2), mas como o jobId e deterministico (ai_<window>)
+ * nenhuma msg nova consegue reagendar — a janela fica refem do job morto. Ao
+ * subir o worker (ex: pos-deploy, ja com o credito de volta) retentamos esses
+ * jobs: agora eles drenam o buffer e respondem. Jobs cujo buffer ja foi drenado
+ * viram no-op (guard 'buffer vazio'). Seguro e idempotente.
+ */
+async function recoverStuckAiReplies(): Promise<void> {
+  try {
+    const failed = await aiReplyQueue.getFailed(0, 500);
+    if (failed.length === 0) return;
+    logger.warn({ count: failed.length }, '[Workers] recuperando ai-reply presos em failed');
+    let retried = 0;
+    for (const job of failed) {
+      try {
+        await job.retry();
+        retried++;
+      } catch (e) {
+        logger.warn(
+          { jobId: job.id, err: (e as Error).message },
+          '[Workers] falha ao retentar ai-reply preso',
+        );
+      }
+    }
+    logger.info({ retried, total: failed.length }, '[Workers] sweep de recuperacao ai-reply concluido');
+  } catch (e) {
+    logger.error({ err: (e as Error).message }, '[Workers] sweep de recuperacao ai-reply falhou');
+  }
+}
+
+/**
  * Inicia todos os workers BullMQ. Idempotente.
  */
 export function startWorkers(): void {
@@ -757,6 +818,10 @@ export function startWorkers(): void {
   }
 
   logger.info({ queues: ['inbound', 'ai-reply', 'outbound'] }, '[Workers] started');
+
+  // Recuperacao pos-boot (fire-and-forget): destrava conversas cujo ai-reply
+  // ficou em 'failed' durante uma queda do Gemini. Roda 1x por subida do worker.
+  void recoverStuckAiReplies();
 }
 
 export async function stopWorkers(): Promise<void> {
