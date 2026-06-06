@@ -389,7 +389,7 @@ Aplique UMA das 6 tecnicas antes de soltar:
 
 1. PERGUNTA DE INVESTIGACAO: "Foi o modelo, o preco ou voce buscava algo diferente?"
 2. ALTERNATIVA: "Esse aqui eh similar e fica R$ 89 a menos."
-3. QUEBRA DE PRECO: "Da pra parcelar 3x sem juros, sai R$ 49,90 ao mes."
+3. VALOR/BENEFICIO: reforce o quanto vale a pena pelo beneficio (qualidade, seguranca, durabilidade). NAO cote parcelamento, desconto nem condicoes de pagamento — isso e SO com a Bia.
 4. URGENCIA SUAVE: "Posso reservar 24h sem compromisso, voce decide com calma."
 5. PROVA SOCIAL: "Esse e o mais pedido esse mes, mamaes voltam pra levar a segunda cor."
 6. FECHAMENTO ALTERNATIVO: "Prefere Azul ou Verde? Posso ja separar."

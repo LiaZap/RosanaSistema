@@ -436,6 +436,23 @@ export async function processDaniMessage(
     );
   }
 
+  // REDE DE SEGURANCA FINAL: o cliente mandou algo com CONTEUDO (ex: respondeu a
+  // pergunta da DANI com "16", um nome, uma duvida) e a DANI ainda assim ficaria
+  // muda. Regra absoluta da Rosana: NUNCA deixar sem resposta. EXCETO quando
+  // acabou de escalar pra Bia (ai o silencio e proposital ate 4h).
+  if (!finalReply && !isFarewell && attachments.length === 0 && message.trim().length > 0) {
+    const lastDani =
+      [...(ctx.history ?? [])].reverse().find((t) => t.role === 'model')?.text ?? '';
+    const recemEscalou = /transferir seu atendimento para a \*?Bia/i.test(lastDani);
+    if (!recemEscalou) {
+      finalReply = 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
+      logger.info(
+        { userMsg: message.slice(0, 50) },
+        '[DANI] rede de seguranca final: msg com conteudo sem resposta',
+      );
+    }
+  }
+
   return {
     reply: finalReply,
     shouldReply: !!finalReply,
