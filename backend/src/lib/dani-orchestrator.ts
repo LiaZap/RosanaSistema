@@ -302,6 +302,7 @@ export async function processDaniMessage(
     /(^|\b)(obrigad[oa]|brigad[oa]|valeu|vlw|vou pensar|deixa|so isso|por enquanto|talvez depois)(\b|[!.,?]|$)/i.test(
       userMsgNorm,
     );
+  const isPhotoRequest = /\b(foto|fotos|imagem|imagens)\b/i.test(userMsgNorm);
   const isFarewell =
     FAREWELL_KEYWORDS.test(userMsgNorm) &&
     !hasRejection && // recusa nunca e despedida
@@ -399,6 +400,19 @@ export async function processDaniMessage(
         logger.warn({ err: (err as Error).message }, '[DANI] fallback reply failed');
       }
     }
+  }
+
+  // REDE DE SEGURANCA: cliente pediu FOTO e a DANI ficaria muda (produto sem
+  // imagem no Bling/catalogo, ou a busca nao retornou foto). NUNCA fica sem
+  // resposta — garante o envio pela equipe e mantem o cliente engajado na venda.
+  // (Raiz: produto sem imagem cadastrada. Fix definitivo = subir a foto.)
+  if (!finalReply && !isFarewell && !hasRejection && attachments.length === 0 && isPhotoRequest) {
+    finalReply =
+      'Claro! 📸 Vou confirmar a foto certinha desse modelo com a equipe pra te enviar. Enquanto isso, qual tamanho você procura, pra eu já deixar separado? 💕';
+    logger.info(
+      { userMsg: message.slice(0, 50) },
+      '[DANI] rede de seguranca: foto pedida sem imagem disponivel',
+    );
   }
 
   // REDE DE SEGURANCA (pedido da Rosana): recusa de oferta NUNCA pode ficar
