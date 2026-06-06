@@ -104,6 +104,7 @@ export default function ConversationDetailPage({
   const nearBottomRef = useRef(true);
   const initialScrollDoneRef = useRef(false); // ja fez o scroll inicial pro fim?
   const prependingRef = useRef(false); // loadOlder esta prependendo (nao scrollar pro fim)
+  const settlingUntilRef = useRef(0); // timestamp ate quando "grudar no fim" (assentamento inicial)
 
   // Quick actions: modais de Deal e Appointment
   const [showDealModal, setShowDealModal] = useState(false);
@@ -232,9 +233,17 @@ export default function ConversationDetailPage({
     if (!initialScrollDoneRef.current) {
       initialScrollDoneRef.current = true;
       nearBottomRef.current = true;
-      toBottom();
-      requestAnimationFrame(toBottom);
-      requestAnimationFrame(() => requestAnimationFrame(toBottom));
+      // Gruda no FIM por uma janela de "assentamento" (~1.2s) cobrindo conteudo
+      // async (imagens, fontes, layout). Enquanto isso o loadOlder fica
+      // BLOQUEADO (ver handleScroll) pra nao entrar em loop de "subir +
+      // recarregar mensagem". Cada frame reforca scrollTop = scrollHeight.
+      settlingUntilRef.current = Date.now() + 1200;
+      const stick = () => {
+        if (!scrollRef.current) return;
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        if (Date.now() < settlingUntilRef.current) requestAnimationFrame(stick);
+      };
+      stick();
       return;
     }
     if (prependingRef.current) {
@@ -273,6 +282,12 @@ export default function ConversationDetailPage({
     const el = e.currentTarget;
     // Nao reage a scroll antes do scroll inicial (evita loop de loadOlder no mount)
     if (!initialScrollDoneRef.current) return;
+    // Durante a janela de assentamento, gruda no fim e NAO dispara loadOlder
+    // (e isto que matava o loop de "fica subindo e recarregando").
+    if (Date.now() < settlingUntilRef.current) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
     nearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
     if (el.scrollTop < 60 && hasMore && !loadingOlder) {
       loadOlder();
