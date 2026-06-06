@@ -15,8 +15,8 @@ import { logger } from './logger.js';
  *  followup_state: 'idle' (default) -> 'scheduled' -> 'sent' | 'declined' | 'closed'
  *
  * Politica de tentativas: max 2 attempts. Apos isso, fecha conversa.
- * Cap: so roda em horario comercial (9h-18h America/Sao_Paulo) pra
- * nao spamar cliente de madrugada.
+ * Roda 24h (a DANI e uma IA, sempre ativa). Anti-spam fica por conta dos
+ * caps de tentativa, nao de horario.
  *
  * Janelas:
  *  - status='human' + ultima msg foi do USER + > 4h -> Bia respondeu, cliente sumiu = candidato
@@ -25,15 +25,12 @@ import { logger } from './logger.js';
  *  - status='nina' + ultima msg foi do USER + > 24h -> candidato pra recovery
  *
  * Anti-spam:
- *  - Max 2 attempts
- *  - So horario comercial
+ *  - Max 2 attempts (cap por ciclo) + cap total
  *  - Atomic claim (state idle/scheduled/sent + UPDATE returning) impede multi-instancia
  */
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-const COMMERCIAL_HOUR_START = 9;
-const COMMERCIAL_HOUR_END = 18;
 const MAX_ATTEMPTS = 2;
 const MAX_TOTAL_ATTEMPTS = 6; // Cap absoluto: cliente nunca recebe mais que isso
 const SUBSTANTIVE_REPLY_MIN_CHARS = 20; // Reset attempts so se cliente respondeu substantivo
@@ -120,11 +117,9 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
   decisions: Record<string, number>;
   errors: number;
 }> {
-  // Skip fora do horario comercial (America/Sao_Paulo via Intl, suporta DST)
-  if (!isCommercialHourSP()) {
-    logger.debug('[Followup] outside commercial hours, skip');
-    return { scanned: 0, decisions: {}, errors: 0 };
-  }
+  // 24h: a DANI e uma IA, sempre ativa — sem trava de horario comercial.
+  // O follow-up roda dia e noite. (Se um dia quiser silenciar a madrugada,
+  // reintroduzir aqui um gate de "quiet hours" configuravel por conta.)
 
   const now = new Date();
   const fourHoursAgo = new Date(now.getTime() - FOUR_HOURS_MS);
@@ -282,25 +277,6 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
     '[Followup] tick complete',
   );
   return { scanned: candidates.length, decisions, errors };
-}
-
-/** Calcula hora atual em America/Sao_Paulo via Intl (lida com DST corretamente) */
-function isCommercialHourSP(): boolean {
-  try {
-    const fmt = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Sao_Paulo',
-      hour12: false,
-      hour: '2-digit',
-    });
-    const hourStr = fmt.format(new Date());
-    const hour = Number(hourStr);
-    if (isNaN(hour)) return false;
-    return hour >= COMMERCIAL_HOUR_START && hour < COMMERCIAL_HOUR_END;
-  } catch {
-    // Fallback UTC-3 hardcoded
-    const hourBR = (new Date().getUTCHours() - 3 + 24) % 24;
-    return hourBR >= COMMERCIAL_HOUR_START && hourBR < COMMERCIAL_HOUR_END;
-  }
 }
 
 async function decideAction(ctx: ConversationContext): Promise<FollowupDecision> {
