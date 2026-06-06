@@ -247,6 +247,28 @@ export default function ConversationDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length, loading]);
 
+  // Imagens (foto de produto, mídia) carregam DEPOIS do render e empurram o
+  // conteudo, fazendo o scroll "subir" sozinho ("sobe pro inicio"). Quando uma
+  // <img> dentro do chat termina de carregar, re-ancora no FIM se o usuario
+  // estava perto do fim. O evento 'load' de img NAO borbulha -> capturamos na
+  // fase de captura (3o arg = true). Nao interfere com loadOlder (prependingRef)
+  // nem com quem rolou pra cima lendo historico (nearBottomRef = false).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onImgLoad = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (!t || t.tagName !== 'IMG') return;
+      if (nearBottomRef.current && !prependingRef.current) {
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        });
+      }
+    };
+    el.addEventListener('load', onImgLoad, true);
+    return () => el.removeEventListener('load', onImgLoad, true);
+  }, []);
+
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     // Nao reage a scroll antes do scroll inicial (evita loop de loadOlder no mount)
