@@ -119,7 +119,21 @@ export async function generateDaniReply(opts: {
     { timeout: GEMINI_TIMEOUT_MS },
   );
 
-  const history: Content[] = opts.history.map((t) => ({
+  // O Gemini EXIGE que o history comece com role 'user'. Conversas onde a 1a
+  // mensagem carregada e da DANI (model) quebravam com:
+  //   "First content should be with role 'user', got model"
+  // (o ai-reply falhava em loop e a DANI nao respondia NADA — nem a foto).
+  // Cortamos os turns 'model' do INICIO ate o primeiro 'user'.
+  let safeHistory = opts.history;
+  const firstUserIdx = safeHistory.findIndex((t) => t.role === 'user');
+  if (firstUserIdx > 0) {
+    safeHistory = safeHistory.slice(firstUserIdx);
+  } else if (firstUserIdx === -1) {
+    // Historico so tem 'model' -> ignora (o sendMessage abaixo abre com 'user').
+    safeHistory = [];
+  }
+
+  const history: Content[] = safeHistory.map((t) => ({
     role: t.role,
     parts: [{ text: t.text }],
   }));
