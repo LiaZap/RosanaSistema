@@ -736,25 +736,38 @@ async function processOutbound(data: OutboundJobData, isLastAttempt = false): Pr
 }
 
 /**
- * Recuperacao no boot: retenta jobs ai-reply presos em 'failed'.
+ * Recuperacao de jobs ai-reply presos em 'failed'. Roda no BOOT do worker E
+ * PERIODICAMENTE (cron a cada 5min) — destrava conversas que ficaram mudas
+ * porque o ai-reply falhou (Gemini blip, timeout, erro pontual) SEM depender de
+ * nova msg do cliente nem de reset manual. Foi exatamente o caso do "16".
  *
- * Contexto: quando o Gemini cai (sem credito/quota), os jobs ai-reply esgotam
- * os attempts e ficam em 'failed' (guardados 24h por removeOnFail). O buffer da
- * conversa foi restaurado (H2), mas como o jobId e deterministico (ai_<window>)
- * nenhuma msg nova consegue reagendar — a janela fica refem do job morto. Ao
- * subir o worker (ex: pos-deploy, ja com o credito de volta) retentamos esses
- * jobs: agora eles drenam o buffer e respondem. Jobs cujo buffer ja foi drenado
- * viram no-op (guard 'buffer vazio'). Seguro e idempotente.
+ * Cap por job (AIREPLY_RETRY_CAP) evita storm: um job 'poison' que sempre falha
+ * para de ser retentado depois de N vezes (conta no Redis, TTL = vida do job).
+ * Jobs cujo buffer ja foi drenado viram no-op. Seguro e idempotente.
  */
-async function recoverStuckAiReplies(): Promise<void> {
+const AIREPLY_RETRY_CAP = 5;
+export async function recoverStuckAiReplies(): Promise<void> {
   try {
     const failed = await aiReplyQueue.getFailed(0, 500);
     if (failed.length === 0) return;
-    logger.warn({ count: failed.length }, '[Workers] recuperando ai-reply presos em failed');
+    const { getRedis } = await import('./queues.js');
+    const redis = getRedis();
     let retried = 0;
+    let capped = 0;
     for (const job of failed) {
+      if (!job?.id) continue;
+      // Cap por job: no maximo AIREPLY_RETRY_CAP retentativas na vida do job
+      // (removeOnFail = 24h). Assim um job que SEMPRE falha nao vira storm de
+      // chamadas ao Gemini — para apos N tentativas e fica visivel no debug.
+      const key = `fce:airetry:${job.id}`;
+      const n = Number((await redis.get(key)) ?? 0);
+      if (n >= AIREPLY_RETRY_CAP) {
+        capped++;
+        continue;
+      }
       try {
         await job.retry();
+        await redis.set(key, String(n + 1), 'EX', 86400);
         retried++;
       } catch (e) {
         logger.warn(
@@ -763,7 +776,9 @@ async function recoverStuckAiReplies(): Promise<void> {
         );
       }
     }
-    logger.info({ retried, total: failed.length }, '[Workers] sweep de recuperacao ai-reply concluido');
+    if (retried > 0 || capped > 0) {
+      logger.info({ retried, capped, total: failed.length }, '[Workers] sweep de recuperacao ai-reply');
+    }
   } catch (e) {
     logger.error({ err: (e as Error).message }, '[Workers] sweep de recuperacao ai-reply falhou');
   }

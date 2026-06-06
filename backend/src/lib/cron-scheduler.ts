@@ -297,6 +297,24 @@ export function startCronJobs(): void {
     { timezone: TZ },
   );
 
+  // ── Recovery de ai-reply presos em 'failed': a cada 5 min ──
+  // Destrava conversas que ficaram MUDAS porque o ai-reply falhou (Gemini blip,
+  // timeout, erro pontual) — foi exatamente o caso do "16". Retenta sozinho,
+  // sem depender de nova msg do cliente nem de reset manual. Cap por job evita
+  // storm num job que sempre falha.
+  cron.schedule(
+    '*/5 * * * *',
+    async () => {
+      try {
+        const { recoverStuckAiReplies } = await import('./workers.js');
+        await recoverStuckAiReplies();
+      } catch (err) {
+        logger.error({ err: (err as Error).message }, '[Cron] ai-reply recovery error');
+      }
+    },
+    { timezone: TZ },
+  );
+
   logger.info(
     {
       jobs: [
@@ -305,6 +323,7 @@ export function startCronJobs(): void {
         'minio-image-cache (*/30 * * * *)',
         'followup-tick (*/5 * * * *)',
         'auto-reactivate (*/10 * * * *)',
+        'ai-reply-recovery (*/5 * * * *)',
       ],
       tz: TZ,
     },
