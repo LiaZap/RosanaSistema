@@ -15,8 +15,9 @@ import { logger } from './logger.js';
  *  followup_state: 'idle' (default) -> 'scheduled' -> 'sent' | 'declined' | 'closed'
  *
  * Politica de tentativas: max 2 attempts. Apos isso, fecha conversa.
- * Roda 24h (a DANI e uma IA, sempre ativa). Anti-spam fica por conta dos
- * caps de tentativa, nao de horario.
+ * Proativo roda 7h-23h (sem madrugada), mas NAO perde follow-up devido de
+ * madrugada — adia e dispara no primeiro horario (7h). Responder mensagem que
+ * CHEGA continua 24h (a DANI sempre ativa). Anti-spam: caps de tentativa.
  *
  * Janelas:
  *  - status='human' + ultima msg foi do USER + > 4h -> Bia respondeu, cliente sumiu = candidato
@@ -31,6 +32,11 @@ import { logger } from './logger.js';
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
+// Janela ativa do follow-up PROATIVO (America/Sao_Paulo). Fora dela a DANI nao
+// fala (sem madrugada), mas o follow-up NAO se perde: dispara no primeiro
+// horario (ver runFollowupTick). Responder msg que chega continua 24h.
+const ACTIVE_HOUR_START = 7;
+const ACTIVE_HOUR_END = 23;
 const MAX_ATTEMPTS = 2;
 const MAX_TOTAL_ATTEMPTS = 6; // Cap absoluto: cliente nunca recebe mais que isso
 const SUBSTANTIVE_REPLY_MIN_CHARS = 20; // Reset attempts so se cliente respondeu substantivo
@@ -117,9 +123,15 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
   decisions: Record<string, number>;
   errors: number;
 }> {
-  // 24h: a DANI e uma IA, sempre ativa — sem trava de horario comercial.
-  // O follow-up roda dia e noite. (Se um dia quiser silenciar a madrugada,
-  // reintroduzir aqui um gate de "quiet hours" configuravel por conta.)
+  // Quiet hours: o follow-up PROATIVO nao fala de madrugada — janela 7h-23h.
+  // Mas NAO perde o follow-up: se ficou "devido" durante a madrugada, o
+  // candidato continua elegivel e o cron (a cada 5min) dispara no PRIMEIRO
+  // horario (7h). Responder a mensagem que CHEGA continua 24h — isto aqui e so
+  // o proativo (a DANI reabordando quem sumiu).
+  if (!isActiveHourSP()) {
+    logger.debug('[Followup] fora da janela 7h-23h, adia follow-up pro primeiro horario');
+    return { scanned: 0, decisions: {}, errors: 0 };
+  }
 
   const now = new Date();
   const fourHoursAgo = new Date(now.getTime() - FOUR_HOURS_MS);
@@ -277,6 +289,28 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
     '[Followup] tick complete',
   );
   return { scanned: candidates.length, decisions, errors };
+}
+
+/**
+ * Hora atual em America/Sao_Paulo (Intl, lida com DST). Define a janela ativa
+ * do follow-up PROATIVO (7h-23h). Fora dela retorna false -> o tick adia, mas
+ * o candidato continua elegivel e dispara quando a janela reabre (7h).
+ */
+function isActiveHourSP(): boolean {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      hour12: false,
+      hour: '2-digit',
+    });
+    const hour = Number(fmt.format(new Date()));
+    if (isNaN(hour)) return true; // em duvida, deixa rodar (follow-up "tem que acontecer")
+    return hour >= ACTIVE_HOUR_START && hour < ACTIVE_HOUR_END;
+  } catch {
+    // Fallback UTC-3 hardcoded
+    const hourBR = (new Date().getUTCHours() - 3 + 24) % 24;
+    return hourBR >= ACTIVE_HOUR_START && hourBR < ACTIVE_HOUR_END;
+  }
 }
 
 async function decideAction(ctx: ConversationContext): Promise<FollowupDecision> {
