@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db/client.js';
-import { contacts, conversations, whatsappSessions } from '../db/schema.js';
+import { contacts, conversations, ninaSettings, whatsappSessions } from '../db/schema.js';
 import { saveMessage } from './dani-conversations.js';
 import { upsertSessionStatus } from './evolution-client.js';
 import { resetFollowupOnUserReply } from './followup-agent.js';
@@ -182,7 +182,12 @@ export async function handleMessageUpsert(
 
   // 2. Pega conversation ativa
   let conv = await db
-    .select({ id: conversations.id, status: conversations.status })
+    .select({
+      id: conversations.id,
+      status: conversations.status,
+      lastHumanAt: conversations.lastHumanAt,
+      lastMessageAt: conversations.lastMessageAt,
+    })
     .from(conversations)
     .where(
       and(
@@ -202,7 +207,12 @@ export async function handleMessageUpsert(
         contactId: contact.id,
         status: 'nina',
       })
-      .returning({ id: conversations.id, status: conversations.status });
+      .returning({
+        id: conversations.id,
+        status: conversations.status,
+        lastHumanAt: conversations.lastHumanAt,
+        lastMessageAt: conversations.lastMessageAt,
+      });
     conv = created;
   }
 
@@ -242,7 +252,35 @@ export async function handleMessageUpsert(
     logger.info({ conversationId: conv.id }, '[WhatsApp] conversa fechada reaberta pelo cliente');
   }
 
-  // Se humano assumiu (human) ou operador pausou (paused), salva mas nao processa
+  // Cliente voltou DEPOIS que o cooldown pos-humano venceu -> DANI retoma.
+  // BUG corrigido: msg de cliente em conversa 'human' era salva mas NUNCA
+  // enfileirada, entao a reativacao do ai-reply nunca rodava — a unica
+  // reativacao era o cron (e o cron so roda 9h-18h). Resultado: um humano
+  // tocava a conversa e a DANI nao voltava mais, mesmo o cliente respondendo
+  // horas depois. Agora reativamos aqui, no retorno do cliente, e a mensagem
+  // segue pro fluxo normal (enfileira + responde).
+  if (conv.status === 'human') {
+    const settings = await db.query.ninaSettings.findFirst({
+      where: eq(ninaSettings.accountId, accountId),
+      columns: { pauseAfterHumanMinutes: true },
+    });
+    const pauseMinutes = settings?.pauseAfterHumanMinutes ?? 60;
+    const ref = conv.lastHumanAt?.getTime() ?? conv.lastMessageAt?.getTime() ?? null;
+    const minutesIdle = ref ? (Date.now() - ref) / 60_000 : Infinity;
+    if (minutesIdle >= pauseMinutes) {
+      await db
+        .update(conversations)
+        .set({ status: 'nina', updatedAt: new Date() })
+        .where(eq(conversations.id, conv.id));
+      conv.status = 'nina';
+      logger.info(
+        { conversationId: conv.id, minutesIdle: Math.round(minutesIdle), pauseMinutes },
+        '[WhatsApp] cooldown pos-humano venceu - DANI reativada pelo retorno do cliente',
+      );
+    }
+  }
+
+  // Se ainda humano (dentro do cooldown) ou pausado, salva mas nao processa
   if (conv.status !== 'nina') {
     await saveMessage({
       conversationId: conv.id,

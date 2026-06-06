@@ -336,9 +336,10 @@ Caso contrario: apenas o texto que o cliente vai LER no WhatsApp, em PT-BR, form
 
 Nesses casos: message="" + should_reply=false.
 
-EXCECAO CRITICA: "nao", "nao quero", "nao obrigada" RECUSANDO uma oferta NUNCA
-e silencio — e OBJECAO pra quebrar na hora (ver "nunca aceite o primeiro nao").
-Nesse caso should_reply=true, sempre responde.`,
+EXCECAO CRITICA: "nao", "nao obrigada", "obrigada", "valeu", "vou pensar" logo
+DEPOIS de uma oferta sua NUNCA e silencio — e recusa educada pra fechar com
+tecnica OU um fecho caloroso (ver "nunca aceite o primeiro nao"). should_reply=true.
+So silencio se for despedida real ("tchau", "ate mais") ou conversa ja resolvida.`,
     tags: ['silencio', 'comprovante', 'despedida'],
     priority: 100,
     alwaysInclude: true,

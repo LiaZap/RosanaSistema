@@ -288,13 +288,20 @@ export async function processDaniMessage(
   // Aceita "tchau, ate mais" / "obrigada, depois eu volto" etc.
   const userMsgNorm = message.toLowerCase().trim();
   // Match no INICIO ou MSG INTEIRA contendo palavra-chave de despedida
+  // SO despedida REAL silencia (tchau / ate mais / falou). "obrigada" e "valeu"
+  // sozinhos NAO entram aqui: depois de uma oferta sao recusa educada e a DANI
+  // DEVE responder (pedido da Rosana: nunca terminar "a seco").
   const FAREWELL_KEYWORDS =
-    /(^|\b)(tchau|obrigad[oa]|brigad[oa]|valeu|vlw|flw|fui|ate logo|ate mais|ate amanha|ate depois|obg|tmj|deixa pra la|deixa quieto)(\b|[!.,?]|$)/i;
-  // Recusa de oferta ("nao", "nao obrigada", "nao quero") NAO e despedida: e
-  // objecao pra DANI quebrar na hora (pedido da Rosana). Se tem negacao, NUNCA
-  // tratamos como despedida — deixamos a resposta da DANI passar.
+    /(^|\b)(tchau|falou|flw|fui|ate logo|ate mais|ate amanha|ate depois|ate breve|ate mais tarde)(\b|[!.,?]|$)/i;
+  // Recusa ("nao", "nao quero") OU agradecimento/recuo apos oferta ("obrigada",
+  // "valeu", "vou pensar", "deixa") = objecao pra DANI fechar com tecnica ou ao
+  // menos um fecho caloroso. NUNCA silencio nesses casos.
   const hasRejection =
     /\bn[ãa]o\b/i.test(userMsgNorm) || /\b(nem|nunca|jamais)\b/i.test(userMsgNorm);
+  const isThanksOrSoftDecline =
+    /(^|\b)(obrigad[oa]|brigad[oa]|valeu|vlw|vou pensar|deixa|so isso|por enquanto|talvez depois)(\b|[!.,?]|$)/i.test(
+      userMsgNorm,
+    );
   const isFarewell =
     FAREWELL_KEYWORDS.test(userMsgNorm) &&
     !hasRejection && // recusa nunca e despedida
@@ -399,11 +406,19 @@ export async function processDaniMessage(
   // DANI ficou muda (sem texto, sem foto, sem escalacao), mandamos ao menos um
   // fechamento cortes com porta aberta. A quebra de objecao real e papel do
   // modelo (via prompt); isto e so a garantia de ultimo caso pra nunca sumir.
-  if (!finalReply && hasRejection && attachments.length === 0) {
-    finalReply = 'Ah, sem problemas! Quer que eu te mostre mais alguma opção?';
+  if (
+    !finalReply &&
+    !isFarewell &&
+    (hasRejection || isThanksOrSoftDecline) &&
+    attachments.length === 0
+  ) {
+    // Cliente recusou OU agradeceu apos uma oferta e a DANI ficaria muda. Manda
+    // ao menos um fecho caloroso com porta aberta (Rosana: nunca terminar "a
+    // seco", sempre agradecer/finalizar). A quebra de objecao real e do modelo.
+    finalReply = 'Imagina! Fico à disposição. Quer que eu te mostre mais alguma opção? 😊';
     logger.info(
       { userMsg: message.slice(0, 50) },
-      '[DANI] rede de seguranca: recusa sem resposta - fechamento cortes aplicado',
+      '[DANI] rede de seguranca: recusa/agradecimento sem resposta - fecho cortes aplicado',
     );
   }
 
