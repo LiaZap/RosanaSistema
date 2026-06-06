@@ -143,12 +143,23 @@ export default function ConversationDetailPage({
       const data = await api.get<DetailResponse>(
         `/crm/conversations/${conversationId}?accountId=${accountId}`,
       );
-      setDetail(data);
       if (initial) {
+        setDetail(data);
         setMessages(data.messages);
         setHasMore(!!data.hasMore);
       } else {
-        // Poll: mescla so mensagens novas no fim (preserva antigas carregadas)
+        // Poll (a cada 8s): NAO re-renderiza quando nada mudou. Antes o
+        // setDetail(data) era incondicional e re-renderizava a conversa inteira
+        // a cada 8s ("regera a conversa"), e qualquer mexida de layout/scroll
+        // junto fazia ela "subir pro topo". Agora so atualiza o detail se o
+        // status (ou contagem de msgs) mudou, e as mensagens so se chegou nova.
+        setDetail((prev) =>
+          prev &&
+          prev.conversation.status === data.conversation.status &&
+          prev.messages.length === data.messages.length
+            ? prev
+            : data,
+        );
         setMessages((prev) => {
           const ids = new Set(prev.map((m) => m.id));
           const incoming = data.messages.filter((m) => !ids.has(m.id));
