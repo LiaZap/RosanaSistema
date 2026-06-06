@@ -15,9 +15,10 @@ import { logger } from './logger.js';
  *  followup_state: 'idle' (default) -> 'scheduled' -> 'sent' | 'declined' | 'closed'
  *
  * Politica de tentativas: max 2 attempts. Apos isso, fecha conversa.
- * Proativo roda 7h-23h (sem madrugada), mas NAO perde follow-up devido de
- * madrugada — adia e dispara no primeiro horario (7h). Responder mensagem que
- * CHEGA continua 24h (a DANI sempre ativa). Anti-spam: caps de tentativa.
+ * Proativo roda 8h-17h (Rosana so esta na loja ate 17h), mas NAO perde
+ * follow-up devido fora do horario — adia e dispara no primeiro horario (8h).
+ * Responder mensagem que CHEGA continua 24h (a DANI sempre ativa). Anti-spam:
+ * caps de tentativa.
  *
  * Janelas:
  *  - status='human' + ultima msg foi do USER + > 4h -> Bia respondeu, cliente sumiu = candidato
@@ -32,11 +33,12 @@ import { logger } from './logger.js';
 
 const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
-// Janela ativa do follow-up PROATIVO (America/Sao_Paulo). Fora dela a DANI nao
-// fala (sem madrugada), mas o follow-up NAO se perde: dispara no primeiro
-// horario (ver runFollowupTick). Responder msg que chega continua 24h.
-const ACTIVE_HOUR_START = 7;
-const ACTIVE_HOUR_END = 23;
+// Janela ativa do follow-up PROATIVO (America/Sao_Paulo): 8h-17h. Combinado com
+// a Rosana — apos 17h ela nao esta na loja pra resolver o que depender dela.
+// Fora da janela a DANI nao reaborda, mas o follow-up NAO se perde: dispara no
+// primeiro horario (8h, ver runFollowupTick). Responder msg que chega = 24h.
+const ACTIVE_HOUR_START = 8;
+const ACTIVE_HOUR_END = 17;
 const MAX_ATTEMPTS = 2;
 const MAX_TOTAL_ATTEMPTS = 6; // Cap absoluto: cliente nunca recebe mais que isso
 const SUBSTANTIVE_REPLY_MIN_CHARS = 20; // Reset attempts so se cliente respondeu substantivo
@@ -123,13 +125,12 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
   decisions: Record<string, number>;
   errors: number;
 }> {
-  // Quiet hours: o follow-up PROATIVO nao fala de madrugada — janela 7h-23h.
-  // Mas NAO perde o follow-up: se ficou "devido" durante a madrugada, o
-  // candidato continua elegivel e o cron (a cada 5min) dispara no PRIMEIRO
-  // horario (7h). Responder a mensagem que CHEGA continua 24h — isto aqui e so
-  // o proativo (a DANI reabordando quem sumiu).
+  // Janela do follow-up PROATIVO: 8h-17h (Rosana so esta na loja ate 17h).
+  // Fora dela NAO reaborda, mas NAO perde: o candidato continua elegivel e o
+  // cron (a cada 5min) dispara no PRIMEIRO horario (8h). Responder a mensagem
+  // que CHEGA continua 24h — isto aqui e so o proativo (reabordar quem sumiu).
   if (!isActiveHourSP()) {
-    logger.debug('[Followup] fora da janela 7h-23h, adia follow-up pro primeiro horario');
+    logger.debug('[Followup] fora da janela 8h-17h, adia follow-up pro primeiro horario');
     return { scanned: 0, decisions: {}, errors: 0 };
   }
 
@@ -293,8 +294,8 @@ export async function runFollowupTick(opts: { accountId?: string } = {}): Promis
 
 /**
  * Hora atual em America/Sao_Paulo (Intl, lida com DST). Define a janela ativa
- * do follow-up PROATIVO (7h-23h). Fora dela retorna false -> o tick adia, mas
- * o candidato continua elegivel e dispara quando a janela reabre (7h).
+ * do follow-up PROATIVO (8h-17h). Fora dela retorna false -> o tick adia, mas
+ * o candidato continua elegivel e dispara quando a janela reabre (8h).
  */
 function isActiveHourSP(): boolean {
   try {

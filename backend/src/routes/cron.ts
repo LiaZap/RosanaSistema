@@ -61,7 +61,7 @@ cronRoutes.get('/schedule', requireAuth, async (c) => {
         name: 'Follow-up agent',
         description: 'Analisa conversas idle 4h+ e decide recovery via Gemini',
         cron: '*/5 * * * *',
-        humanReadable: 'A cada 5 minutos (proativo 7h-23h)',
+        humanReadable: 'A cada 5 minutos (proativo 8h-17h)',
         enabled: process.env.DISABLE_CRON !== 'true',
       },
     ],
