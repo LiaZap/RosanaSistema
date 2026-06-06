@@ -1,14 +1,20 @@
+import { randomUUID } from 'crypto';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { hash } from '@node-rs/argon2';
-import { and, eq, desc, ne } from 'drizzle-orm';
+import { and, eq, desc, ne, isNull, inArray } from 'drizzle-orm';
 import { db } from '../db/client.js';
 import {
   users,
   profiles,
   accounts,
   accountMembers,
+  contacts,
+  conversations,
+  messages,
 } from '../db/schema.js';
+import { getRedis, aiReplyQueue } from '../lib/queues.js';
+import { restoreBuffer } from '../lib/inbound-buffer.js';
 import { requireAuth, getUser } from '../middleware/auth.js';
 import {
   ValidationError,
@@ -341,6 +347,170 @@ admin.patch('/users/:userId/super-admin', async (c) => {
     '[Admin] flag super-admin alterada',
   );
   return c.json({ ok: true, userId, isSuperAdmin });
+});
+
+// ── GET /admin/debug/conversation/:phone ─────────────
+// Diagnostico de uma conversa por telefone: status, ultimas msgs, rate-limit
+// outbound, estado do buffer e jobs ai-reply pendentes/falhos. Pra investigar
+// "a DANI nao respondeu / nao mandou foto pra esse numero".
+admin.get('/debug/conversation/:phone', async (c) => {
+  const phone = c.req.param('phone').replace(/\D/g, '');
+
+  const [contact] = await db
+    .select({ id: contacts.id, name: contacts.name, phone: contacts.phoneNumber, accountId: contacts.accountId })
+    .from(contacts)
+    .where(eq(contacts.phoneNumber, phone))
+    .limit(1);
+  if (!contact) return c.json({ found: false, phone, reason: 'contato nao encontrado' });
+
+  const [conv] = await db
+    .select({
+      id: conversations.id,
+      status: conversations.status,
+      lastHumanAt: conversations.lastHumanAt,
+      lastMessageAt: conversations.lastMessageAt,
+      followupState: conversations.followupState,
+    })
+    .from(conversations)
+    .where(eq(conversations.contactId, contact.id))
+    .orderBy(desc(conversations.createdAt))
+    .limit(1);
+
+  const msgs = conv
+    ? await db
+        .select({
+          fromType: messages.fromType,
+          messageType: messages.messageType,
+          content: messages.content,
+          bufferWindowId: messages.bufferWindowId,
+          createdAt: messages.createdAt,
+        })
+        .from(messages)
+        .where(eq(messages.conversationId, conv.id))
+        .orderBy(desc(messages.createdAt))
+        .limit(12)
+    : [];
+
+  const redis = getRedis();
+  const rlKey = `fce:rl:out:${phone}`;
+  const [rlVal, rlTtl, bufLen, bufWin, bufLast] = await Promise.all([
+    redis.get(rlKey),
+    redis.ttl(rlKey),
+    conv ? redis.llen(`fce:buf:${conv.id}`) : Promise.resolve(0),
+    conv ? redis.get(`fce:buf:${conv.id}:win`) : Promise.resolve(null),
+    conv ? redis.get(`fce:buf:${conv.id}:last`) : Promise.resolve(null),
+  ]);
+
+  // jobs ai-reply (failed/delayed/waiting) dessa conversa
+  const [failed, delayed, waiting] = await Promise.all([
+    aiReplyQueue.getFailed(0, 300),
+    aiReplyQueue.getDelayed(0, 300),
+    aiReplyQueue.getWaiting(0, 300),
+  ]);
+  const mine = (j: { data?: { conversationId?: string } }) => j?.data?.conversationId === conv?.id;
+  const aiJobs = {
+    failed: failed.filter(mine).map((j) => ({ id: j.id, attemptsMade: j.attemptsMade, reason: (j.failedReason ?? '').slice(0, 200) })),
+    delayedCount: delayed.filter(mine).length,
+    waitingCount: waiting.filter(mine).length,
+  };
+
+  const rlCurrent = Number(rlVal ?? 0);
+  return c.json({
+    found: true,
+    contact,
+    conversation: conv ?? null,
+    diagnostico: {
+      status: conv?.status ?? 'sem conversa',
+      rateLimitOutbound: { current: rlCurrent, limit: 30, ttlSeconds: rlTtl, bloqueado: rlCurrent >= 30 },
+      buffer: { pendentes: bufLen, windowId: bufWin, lastAt: bufLast ? new Date(Number(bufLast)).toISOString() : null },
+      aiReplyJobs: aiJobs,
+      possivelBloqueio:
+        conv?.status === 'human' ? 'conversa em modo HUMANO (cooldown)' :
+        conv?.status === 'paused' ? 'conversa PAUSADA manualmente' :
+        conv?.status === 'closed' ? 'conversa FECHADA' :
+        rlCurrent >= 30 ? 'rate-limit outbound atingido' :
+        aiJobs.failed.length > 0 ? 'ai-reply em estado FAILED (ver reason)' :
+        bufLen > 0 ? 'mensagens presas no buffer (nao processadas)' :
+        'sem bloqueio obvio - ver reason dos jobs / logs',
+    },
+    lastMessages: msgs.reverse(),
+  });
+});
+
+// ── POST /admin/debug/conversation/:phone/reset ──────
+// Destrava a conversa: limpa rate-limit, status=nina, retenta ai-reply falhos
+// e re-enfileira a ultima msg do cliente (DANI reprocessa e responde/manda foto).
+admin.post('/debug/conversation/:phone/reset', async (c) => {
+  const phone = c.req.param('phone').replace(/\D/g, '');
+  const [contact] = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(eq(contacts.phoneNumber, phone))
+    .limit(1);
+  if (!contact) throw new NotFoundError('Contato nao encontrado');
+
+  const [conv] = await db
+    .select({ id: conversations.id, accountId: conversations.accountId, contactId: conversations.contactId, status: conversations.status })
+    .from(conversations)
+    .where(eq(conversations.contactId, contact.id))
+    .orderBy(desc(conversations.createdAt))
+    .limit(1);
+  if (!conv) throw new NotFoundError('Conversa nao encontrada');
+
+  const redis = getRedis();
+  const actions: string[] = [];
+
+  // 1. Limpa rate-limit outbound do numero
+  await redis.del(`fce:rl:out:${phone}`).catch(() => {});
+  actions.push('rate-limit outbound limpo');
+
+  // 2. status -> nina (tira de human/paused/closed)
+  if (conv.status !== 'nina') {
+    await db
+      .update(conversations)
+      .set({ status: 'nina', lastHumanAt: null, updatedAt: new Date() })
+      .where(eq(conversations.id, conv.id));
+    actions.push(`status ${conv.status} -> nina`);
+  }
+
+  // 3. Retenta ai-reply falhos dessa conversa
+  const failed = await aiReplyQueue.getFailed(0, 500);
+  let retried = 0;
+  for (const j of failed) {
+    if ((j?.data as { conversationId?: string })?.conversationId === conv.id) {
+      await j.retry().catch(() => {});
+      retried++;
+    }
+  }
+  if (retried) actions.push(`${retried} ai-reply falho(s) retentado(s)`);
+
+  // 4. Re-enfileira a ultima msg do cliente (DANI reprocessa e responde)
+  const [lastUser] = await db
+    .select({ id: messages.id, bufferWindowId: messages.bufferWindowId })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conv.id), eq(messages.fromType, 'user')))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  if (lastUser) {
+    const windowId = lastUser.bufferWindowId ?? randomUUID();
+    const pending = await db
+      .select({ id: messages.id })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.fromType, 'user'), isNull(messages.bufferWindowId)))
+      .orderBy(messages.createdAt);
+    const ids = pending.length > 0 ? pending.map((m) => m.id) : [lastUser.id];
+    await db.update(messages).set({ bufferWindowId: windowId }).where(inArray(messages.id, ids));
+    await restoreBuffer({ conversationId: conv.id, windowId, messageIds: ids });
+    await aiReplyQueue.add(
+      'process',
+      { accountId: conv.accountId, conversationId: conv.id, contactId: conv.contactId, phoneNumber: phone, bufferWindowId: windowId },
+      { jobId: `ai_adminreset_${conv.id}_${Date.now()}`, delay: 500 },
+    );
+    actions.push(`ai-reply re-enfileirado (${ids.length} msg) - DANI vai reprocessar`);
+  }
+
+  logger.info({ phone, conversationId: conv.id, actions }, '[Admin] conversa destravada manualmente');
+  return c.json({ ok: true, conversationId: conv.id, actions });
 });
 
 export default admin;
