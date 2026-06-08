@@ -303,6 +303,10 @@ export async function processDaniMessage(
       userMsgNorm,
     );
   const isPhotoRequest = /\b(foto|fotos|imagem|imagens)\b/i.test(userMsgNorm);
+  const isGreeting =
+    /^(oi+|ola|ole|opa|e ai|bom dia|boa tarde|boa noite|tudo bem|tudo certo|tudo bom)\b/i.test(
+      userMsgNorm,
+    );
   const isFarewell =
     FAREWELL_KEYWORDS.test(userMsgNorm) &&
     !hasRejection && // recusa nunca e despedida
@@ -445,9 +449,13 @@ export async function processDaniMessage(
       [...(ctx.history ?? [])].reverse().find((t) => t.role === 'model')?.text ?? '';
     const recemEscalou = /transferir seu atendimento para a \*?Bia/i.test(lastDani);
     if (!recemEscalou) {
-      finalReply = 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
+      // Saudacao vaga ("bom dia!", "oi") -> reconhece a pendencia e pergunta a
+      // continuidade (ideia da Rosana), em vez do generico "deixa eu confirmar".
+      finalReply = isGreeting
+        ? 'Oi, tudo bem?! 💕 Vi que você pode estar aguardando um retorno do nosso atendimento. É essa continuidade que você deseja, ou precisa de algum outro produto ou informação?'
+        : 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
       logger.info(
-        { userMsg: message.slice(0, 50) },
+        { userMsg: message.slice(0, 50), isGreeting },
         '[DANI] rede de seguranca final: msg com conteudo sem resposta',
       );
     }

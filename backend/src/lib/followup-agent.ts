@@ -72,6 +72,11 @@ A conversa esta inativa ha um tempo. Voce decide o que fazer agora:
 - close_conversation: marcar como encerrada (foi resolvida ha tempo)
 - wait_more: ainda nao eh hora (ex: tempo insuficiente, fim de semana)
 
+REGRA DE OURO: so reaborde quem tem decisao EM ABERTO. Se o cliente deu QUALQUER
+sinal de que ja resolveu, desistiu de vez, ou o motivo da compra expirou ->
+stay_silent ou close_conversation, JAMAIS send_recovery. Reabordar quem ja
+resolveu incomoda e queima a marca.
+
 CRITERIOS pra send_recovery:
 - Cliente disse "vou pensar", "depois te falo", "vou ver com X" -> SIM
 - Cliente perguntou preco e sumiu (decisao em aberto) -> SIM
@@ -82,6 +87,9 @@ CRITERIOS pra stay_silent:
 - Cliente se despediu ("tchau", "obrigada") -> SIM
 - Cliente mandou comprovante (venda fechada) -> SIM
 - Cliente reclamou ou ficou bravo -> SIM
+- Cliente JA RESOLVEU: comprou em outro lugar, "nao precisa mais", "ja resolvi",
+  era presente/uso pra uma DATA que ja passou (cha, evento, aniversario), ou
+  desistiu de vez -> SIM. NUNCA reaborde nesse caso.
 - Atendimento foi escalado pra Bia e ela respondeu (so silencio ate ela voltar) -> SIM
 
 CRITERIOS pra close_conversation:
