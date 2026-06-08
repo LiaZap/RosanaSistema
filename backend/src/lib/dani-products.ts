@@ -181,12 +181,23 @@ export async function buscarProdutos(opts: {
   // Sinonimos de tecido (ex: soft/fleece -> "microsoft" no cadastro)
   const synTerms = expandSynonyms(q);
 
-  // WHERE: match na consulta OU em qualquer sinonimo
-  const matchClauses = [
-    sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`}`,
-    ...synTerms.map((t) => sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${t}%`}`),
-  ];
-  const whereMatch = matchClauses.reduce((a, b) => sql`${a} OR ${b}`);
+  // Tokeniza em palavras significativas. CRITICO: a busca antiga exigia a FRASE
+  // INTEIRA como substring, entao "conjunto termico infantil" NAO casava com
+  // "conjunto termico preto" -> DANI dizia "nao temos" pra produto que EXISTE.
+  // Agora casamos por TOKEN e ranqueamos por quantos tokens batem. Palavras
+  // genericas (infantil, etc.) sao ignoradas no ranking.
+  const STOP = new Set([
+    'infantil', 'para', 'com', 'dos', 'das', 'uma', 'tem', 'voce', 'quero',
+    'pronta', 'entrega', 'que', 'por', 'meu', 'minha', 'seu', 'sua', 'esse',
+    'essa', 'esta', 'tipo', 'aquele', 'aquela', 'preciso', 'queria', 'tamanho',
+  ]);
+  const tokens = q.split(/\s+/).filter((t) => t.length >= 3 && !STOP.has(t));
+
+  // WHERE: casa se o nome contem a frase inteira OU qualquer token OU sinonimo
+  const matchTerms = Array.from(new Set([q, ...tokens, ...synTerms])).filter(Boolean);
+  const whereMatch = matchTerms
+    .map((t) => sql`${produtosCatalogo.nomeNormalizado} ilike ${`%${t}%`}`)
+    .reduce((a, b) => sql`${a} OR ${b}`);
 
   // Match por sinonimo (pra dar score quando casa so via sinonimo)
   const synMatch = synTerms.length
@@ -195,16 +206,28 @@ export async function buscarProdutos(opts: {
         .reduce((a, b) => sql`${a} OR ${b}`)
     : sql`false`;
 
-  // Score: 100 exato | 50 prefix | 30 contains | 25 via sinonimo | +40 disponivel
-  const score = sql<number>`(
+  // 20 pontos por TOKEN que bate (quanto mais tokens, mais relevante)
+  const tokenScore = tokens.length
+    ? tokens
+        .map(
+          (t) =>
+            sql`(case when ${produtosCatalogo.nomeNormalizado} ilike ${`%${t}%`} then 20 else 0 end)`,
+        )
+        .reduce((a, b) => sql`${a} + ${b}`)
+    : sql`0`;
+
+  // RELEVANCIA (sem estoque): frase exata/prefix/contains + tokens + sinonimo.
+  // Ordena por relevancia PRIMEIRO, estoque depois — assim o produto certo
+  // aparece mesmo se estiver sem estoque (a Lei da Ferramenta cuida do resto).
+  const relevance = sql<number>`(
     case
-      when ${produtosCatalogo.nomeNormalizado} = ${q} then 100
-      when ${produtosCatalogo.nomeNormalizado} ilike ${`${q}%`} then 50
-      when ${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`} then 30
-      when (${synMatch}) then 25
+      when ${produtosCatalogo.nomeNormalizado} = ${q} then 1000
+      when ${produtosCatalogo.nomeNormalizado} ilike ${`${q}%`} then 500
+      when ${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`} then 300
       else 0
-    end +
-    case when ${produtosCatalogo.disponivel} = true then 40 else 0 end
+    end
+    + (${tokenScore})
+    + case when (${synMatch}) then 50 else 0 end
   )`;
 
   const rows = await db
@@ -216,7 +239,7 @@ export async function buscarProdutos(opts: {
         sql`(${whereMatch})`,
       ),
     )
-    .orderBy(desc(score), desc(produtosCatalogo.disponivel))
+    .orderBy(desc(relevance), desc(produtosCatalogo.disponivel))
     .limit(limit);
 
   const mapped = rows.map(mapRow);
