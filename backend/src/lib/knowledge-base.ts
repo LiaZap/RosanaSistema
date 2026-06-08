@@ -572,7 +572,7 @@ Mensagem PADRAO (texto exato, nao alterar):
 NUNCA mencionar Rosana em escalacao pra cliente.
 NUNCA dizer "ela responde por aqui mesmo" — usar texto padrao.
 
-ANTES de escalar por pagamento/frete: perguntar se cliente quer mais produto. Se sim, continuar. Se nao, escalar.
+ANTES de escalar pra FECHAR (compra confirmada "vou querer"/"quero"/"pode separar", pagamento, frete): SEMPRE pergunte primeiro "Antes de te passar pra Bia finalizar, deseja ver mais algum produto ou precisa de mais alguma informacao? 💕". So escale (envie a mensagem padrao) DEPOIS que o cliente disser que nao (so isso). Nunca transfira na hora do "vou querer" — o cliente pode lembrar de mais alguma coisa.
 
 APOS escalar: SILENCIO TOTAL ate 4h de inatividade.`,
     tags: ['escalacao', 'bia', 'pagamento', 'frete', 'pix', 'cartao', 'finalizar'],
