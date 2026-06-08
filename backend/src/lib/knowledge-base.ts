@@ -172,6 +172,9 @@ function detectCategories(msg: string): string[] {
   if (/não precisa|obrigada|tchau|valeu|vou pensar|caro|não|deixa|depois/.test(msg)) {
     out.push('vendas');
   }
+  if (/tamanho|medida|veste|n[úu]mero|qual tamanho|que tamanho|idade|anos\b|\bcm\b|altura|tabela|peso/.test(msg)) {
+    out.push('tamanhos');
+  }
   return out;
 }
 
@@ -549,6 +552,45 @@ Quando primeira busca retornou vazio: tentar marca isolada, depois palavra-chave
 NUNCA sugerir categoria diferente (ex: casaco no lugar de pijama). Sempre deixar claro que e alternativa.`,
     tags: ['similar', 'alternativa', 'sem estoque'],
     priority: 75,
+    alwaysInclude: false,
+  },
+
+  // ── TAMANHOS / MEDIDAS ──
+  {
+    category: 'tamanhos',
+    title: 'Tabela de medidas e tamanhos (roupas)',
+    content: `Ajude o cliente a achar o tamanho certo. Pergunte a IDADE da crianca
+(ou altura/peso) e indique o tamanho. ATENCAO: o tamanho VARIA por marca — se
+souber a marca do produto, use a tabela dela; se nao, use a referencia geral e
+avise que pode variar um pouco.
+
+REGRA PRATICA: o NUMERO do tamanho (1 a 16) geralmente bate com a IDADE em anos
+(ex: 8 anos = tamanho 8, 12 anos = tamanho 12). Bebe vai por mes: P(3m) M(6m)
+G(9m) GG/1(12-18m).
+
+HAVE FUN (tamanho: altura / busto / quadril, cm):
+RN 50/40/43 | P 58/44/44 | M 66/46/46 | G 72/48/48 | 1 86/50/52 | 2 88/52/54 |
+3 98/54/56 | 4 104/56/61 | 6 116/61/65 | 8 128/66/70 | 10 140/70/76 |
+12 150/75/82 | 14 155/78/87 | 16 160/83/92
+
+CARTERS (tamanho - faixa etaria - altura cm - peso kg):
+RN 0-1m 43-54 2-3kg | 3M 1-3m 55-60 3-5kg | 6M 3-6m 60-66 5-7kg | 9M 6-9m 66-71
+7-9kg | 12M 9-12m 71-76 8-10kg | 18M 12-18m 76-81 10-12kg | 24M 18-24m 81-86
+12-14kg | 2A 2-3a 84-89 13-15kg | 3A 3-4a 89-94 14-16kg | 4A 4-5a 99-104 15-17kg
+| 5A 5-6a 104-111 18-20kg | 6A 6-7a 111-119 20-22kg
+
+DEDEKA (tamanho - idade - altura cm):
+PR(prematuro) 43-51 | RN 52-61 | P(3m) 62-66 | M(6m) 67-71 | G(9m) 72-76 |
+GG(12m) 77-81 | 1(18m) 82-87 | 2(2a) 88-97 | 3(3a) 98-104 | 4(4a) 105-116 |
+6(6a) 117-127 | 8(8a) 128-136 | 10(10a) 137-149 | 12(12a) 150-155 |
+14(14a) 156-160 | 16(16a) 161-165
+
+Se o cliente nao souber: peca pra medir a ALTURA da crianca (fita metrica, sem
+apertar). Em duvida entre 2 tamanhos, sugira o MAIOR. NUNCA invente medida que
+nao esta aqui — se nao tiver a info da marca exata, diga a referencia geral e
+ofereca confirmar com a equipe.`,
+    tags: ['tamanho', 'medida', 'tabela', 'altura', 'idade', 'numero', 'veste', 'peso'],
+    priority: 80,
     alwaysInclude: false,
   },
 
