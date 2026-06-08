@@ -34,6 +34,9 @@ function normalize(input: string): string {
  */
 const SYNONYM_GROUPS: string[][] = [
   ['soft', 'microsoft', 'fleece', 'plush', 'pelucia', 'peluciado', 'peludinho'],
+  // Termico: cadastro mistura "Termica", "Termico" e "Thermo Dry" (ingles).
+  // Sem isso, o cliente que pede "termico" nao acha a "Blusa Termica Thermo Dry".
+  ['termico', 'termica', 'thermo'],
 ];
 
 /**
