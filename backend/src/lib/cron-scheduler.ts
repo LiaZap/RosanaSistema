@@ -222,6 +222,7 @@ export function startCronJobs(): void {
                   .select({
                     id: messages.id,
                     fromType: messages.fromType,
+                    content: messages.content,
                     bufferWindowId: messages.bufferWindowId,
                   })
                   .from(messages)
@@ -230,6 +231,19 @@ export function startCronJobs(): void {
                   .limit(1);
 
                 if (!lastMsg[0] || lastMsg[0].fromType !== 'user') continue;
+
+                // Rosana (encarecidamente): se o humano FINALIZOU e o cliente so
+                // agradeceu/se despediu, NAO reabordar. Reativa o status mas NAO
+                // re-processa o "obrigada" -> DANI fica em silencio. Reabordar
+                // quem ja fechou e "muito chato".
+                const lastContent = (lastMsg[0].content ?? '').toLowerCase().trim();
+                const isClosingOnly =
+                  lastContent.length <= 25 &&
+                  !lastContent.includes('?') &&
+                  /^(muito )?(obrigad|brigad|valeu|vlw|tchau|ok\b|ta bem|tá bem|beleza|blz|de nada|imagina|👍|🙏|❤|💕|😊|🥰)/i.test(
+                    lastContent,
+                  );
+                if (isClosingOnly) continue;
 
                 // Pega phone do contato
                 const ct = await db

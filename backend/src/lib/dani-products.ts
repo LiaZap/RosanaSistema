@@ -209,7 +209,10 @@ export async function buscarProdutos(opts: {
         .reduce((a, b) => sql`${a} OR ${b}`)
     : sql`false`;
 
-  // 20 pontos por TOKEN que bate (quanto mais tokens, mais relevante)
+  // tokenScore: 20 por TOKEN da consulta que o nome cobre. E a relevancia por
+  // COBERTURA — PRIMARIO na ordenacao. Assim "conjunto termico" traz o CONJUNTO
+  // (2 tokens) ANTES do "Pote Termico" (1 token + sinonimo). Era o bug do copo
+  // termico ranqueando na frente da roupa termica.
   const tokenScore = tokens.length
     ? tokens
         .map(
@@ -219,18 +222,16 @@ export async function buscarProdutos(opts: {
         .reduce((a, b) => sql`${a} + ${b}`)
     : sql`0`;
 
-  // RELEVANCIA (sem estoque): frase exata/prefix/contains + tokens + sinonimo.
-  // Ordena por relevancia PRIMEIRO, estoque depois — assim o produto certo
-  // aparece mesmo se estiver sem estoque (a Lei da Ferramenta cuida do resto).
-  const relevance = sql<number>`(
+  // Desempate: frase exata/prefix/contains + sinonimo. Peso BAIXO pra nao superar
+  // a cobertura de tokens — o sinonimo so ajuda a ACHAR, nao a ranquear na frente.
+  const phraseBonus = sql<number>`(
     case
       when ${produtosCatalogo.nomeNormalizado} = ${q} then 1000
       when ${produtosCatalogo.nomeNormalizado} ilike ${`${q}%`} then 500
       when ${produtosCatalogo.nomeNormalizado} ilike ${`%${q}%`} then 300
       else 0
     end
-    + (${tokenScore})
-    + case when (${synMatch}) then 50 else 0 end
+    + case when (${synMatch}) then 30 else 0 end
   )`;
 
   const rows = await db
@@ -242,7 +243,7 @@ export async function buscarProdutos(opts: {
         sql`(${whereMatch})`,
       ),
     )
-    .orderBy(desc(relevance), desc(produtosCatalogo.disponivel))
+    .orderBy(desc(tokenScore), desc(phraseBonus), desc(produtosCatalogo.disponivel))
     .limit(limit);
 
   const mapped = rows.map(mapRow);

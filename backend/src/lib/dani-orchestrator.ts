@@ -419,20 +419,28 @@ export async function processDaniMessage(
     );
   }
 
-  // REDE DE SEGURANCA (pedido da Rosana): recusa de oferta NUNCA pode ficar
-  // sem resposta. Se o cliente recusou ("nao", "nao obrigada") e mesmo assim a
-  // DANI ficou muda (sem texto, sem foto, sem escalacao), mandamos ao menos um
-  // fechamento cortes com porta aberta. A quebra de objecao real e papel do
-  // modelo (via prompt); isto e so a garantia de ultimo caso pra nunca sumir.
+  // Contexto: a DANI ja escalou pra Bia, ja perguntou o fechamento ("deseja
+  // mais alguma coisa?") ou ja se despediu? Se sim, NAO re-engaja nem
+  // re-pergunta — a Rosana reclamou de "perguntar 2x" e "voltar 1h depois que
+  // FINALIZEI". Detecta na ULTIMA fala da DANI no historico.
+  const lastModelMsg =
+    [...(ctx.history ?? [])].reverse().find((t) => t.role === 'model')?.text ?? '';
+  const jaFechouOuPerguntou =
+    /transferir seu atendimento para a \*?Bia|te passar pra ?\*?Bia|passar pra ?\*?Bia|deseja ver mais algum produto|deseja mais alguma|mais alguma opç|mais alguma inform|fico [aà] disposiç|qualquer coisa.{0,20}(chamar|me chama)/i.test(
+      lastModelMsg,
+    );
+
+  // REDE DE SEGURANCA: recusa/agradecimento apos uma OFERTA da DANI -> fecho
+  // cortes (nunca "a seco"). MAS se a DANI JA escalou ou JA perguntou o
+  // fechamento, fica em SILENCIO — senao vira o "pergunta 2x" / "volta depois
+  // que finalizei" que a Rosana pediu encarecidamente pra parar.
   if (
     !finalReply &&
     !isFarewell &&
+    !jaFechouOuPerguntou &&
     (hasRejection || isThanksOrSoftDecline) &&
     attachments.length === 0
   ) {
-    // Cliente recusou OU agradeceu apos uma oferta e a DANI ficaria muda. Manda
-    // ao menos um fecho caloroso com porta aberta (Rosana: nunca terminar "a
-    // seco", sempre agradecer/finalizar). A quebra de objecao real e do modelo.
     finalReply = 'Imagina! Fico à disposição. Quer que eu te mostre mais alguma opção? 😊';
     logger.info(
       { userMsg: message.slice(0, 50) },
@@ -440,25 +448,26 @@ export async function processDaniMessage(
     );
   }
 
-  // REDE DE SEGURANCA FINAL: o cliente mandou algo com CONTEUDO (ex: respondeu a
-  // pergunta da DANI com "16", um nome, uma duvida) e a DANI ainda assim ficaria
-  // muda. Regra absoluta da Rosana: NUNCA deixar sem resposta. EXCETO quando
-  // acabou de escalar pra Bia (ai o silencio e proposital ate 4h).
-  if (!finalReply && !isFarewell && attachments.length === 0 && message.trim().length > 0) {
-    const lastDani =
-      [...(ctx.history ?? [])].reverse().find((t) => t.role === 'model')?.text ?? '';
-    const recemEscalou = /transferir seu atendimento para a \*?Bia/i.test(lastDani);
-    if (!recemEscalou) {
-      // Saudacao vaga ("bom dia!", "oi") -> reconhece a pendencia e pergunta a
-      // continuidade (ideia da Rosana), em vez do generico "deixa eu confirmar".
-      finalReply = isGreeting
-        ? 'Oi, tudo bem?! 💕 Vi que você pode estar aguardando um retorno do nosso atendimento. É essa continuidade que você deseja, ou precisa de algum outro produto ou informação?'
-        : 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
-      logger.info(
-        { userMsg: message.slice(0, 50), isGreeting },
-        '[DANI] rede de seguranca final: msg com conteudo sem resposta',
-      );
-    }
+  // REDE DE SEGURANCA FINAL: cliente mandou algo com CONTEUDO (ex: respondeu a
+  // pergunta da DANI com "16", um tamanho, uma duvida) e a DANI ficaria muda.
+  // NUNCA deixar sem resposta. EXCETO se a DANI ja escalou/perguntou o
+  // fechamento (silencio proposital — nao re-engaja).
+  if (
+    !finalReply &&
+    !isFarewell &&
+    !jaFechouOuPerguntou &&
+    attachments.length === 0 &&
+    message.trim().length > 0
+  ) {
+    // Saudacao vaga ("bom dia!", "oi") -> reconhece a pendencia e pergunta a
+    // continuidade (ideia da Rosana), em vez do generico "deixa eu confirmar".
+    finalReply = isGreeting
+      ? 'Oi, tudo bem?! 💕 Vi que você pode estar aguardando um retorno do nosso atendimento. É essa continuidade que você deseja, ou precisa de algum outro produto ou informação?'
+      : 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
+    logger.info(
+      { userMsg: message.slice(0, 50), isGreeting },
+      '[DANI] rede de seguranca final: msg com conteudo sem resposta',
+    );
   }
 
   return {
