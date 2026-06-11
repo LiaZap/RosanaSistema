@@ -87,9 +87,11 @@ CRITERIOS pra stay_silent:
 - Cliente se despediu ("tchau", "obrigada") -> SIM
 - Cliente mandou comprovante (venda fechada) -> SIM
 - Cliente reclamou ou ficou bravo -> SIM
-- Cliente JA RESOLVEU: comprou em outro lugar, "nao precisa mais", "ja resolvi",
-  era presente/uso pra uma DATA que ja passou (cha, evento, aniversario), ou
-  desistiu de vez -> SIM. NUNCA reaborde nesse caso.
+- Cliente JA RESPONDEU/DECLINOU: "nao", "nao vou precisar", "nao preciso mais",
+  "nao quero", "nao vou levar", "ja resolvi", "comprei em outro lugar", era pra
+  uma DATA que ja passou (cha, evento, aniversario), ou desistiu -> SIM.
+  REGRA DA ROSANA: basta o cliente dizer "nao" UMA vez -> NUNCA reaborde. 1
+  abordagem so. So reaborda quem ficou em SILENCIO (e ai no maximo 2x).
 - Atendimento foi escalado pra Bia e ela respondeu (so silencio ate ela voltar) -> SIM
 
 CRITERIOS pra close_conversation:
@@ -548,20 +550,29 @@ export async function resetFollowupOnUserReply(
     .where(eq(conversations.id, conversationId))
     .limit(1);
 
-  const reactivateDani = conv?.followupState === 'sent' && conv?.status === 'human';
+  const wasFollowupSent = conv?.followupState === 'sent';
+  const reactivateDani = wasFollowupSent && conv?.status === 'human';
+
+  // Rosana (regra nova): APENAS 1 abordagem se o cliente RESPONDER. Se a DANI ja
+  // mandou follow-up (state='sent') e o cliente respondeu — ATE pra dizer "nao" —
+  // ENCERRA o follow-up (state='declined') e NUNCA reaborda de novo. Antes
+  // resetava os attempts e reabordava 2-3x (o que a Rosana detestou). A DANI
+  // ainda responde a mensagem VIVA do cliente (reactivateDani); so o PROATIVO
+  // para. Quem fica em SILENCIO trava em 'sent' (1 abordagem) — dentro do "max 2".
+  void isSubstantive; // a regra nao depende mais do tamanho da resposta
+  const newState = wasFollowupSent ? ('declined' as const) : ('idle' as const);
 
   await db
     .update(conversations)
     .set({
-      followupState: 'idle',
-      ...(isSubstantive ? { followupAttempts: 0 } : {}),
+      followupState: newState,
       ...(reactivateDani ? { status: 'nina' as const, lastHumanAt: null } : {}),
       updatedAt: new Date(),
     })
     .where(
       and(
         eq(conversations.id, conversationId),
-        sql`${conversations.followupState} IN ('sent', 'declined', 'scheduled')`,
+        sql`${conversations.followupState} IN ('sent', 'scheduled')`,
       ),
     );
 
@@ -571,7 +582,10 @@ export async function resetFollowupOnUserReply(
       '[Followup] cliente respondeu follow-up -> DANI reativada (sai do cooldown humano)',
     );
   }
-  if (isSubstantive) {
-    logger.debug({ conversationId }, '[Followup] reset cycle attempts (substantive reply)');
+  if (wasFollowupSent) {
+    logger.debug(
+      { conversationId },
+      '[Followup] cliente respondeu o follow-up -> encerrado (declined), nao reaborda mais',
+    );
   }
 }
