@@ -448,25 +448,25 @@ export async function processDaniMessage(
     );
   }
 
-  // REDE DE SEGURANCA FINAL: cliente mandou algo com CONTEUDO (ex: respondeu a
-  // pergunta da DANI com "16", um tamanho, uma duvida) e a DANI ficaria muda.
-  // NUNCA deixar sem resposta. EXCETO se a DANI ja escalou/perguntou o
-  // fechamento (silencio proposital — nao re-engaja).
+  // REDE DE SEGURANCA: cliente voltou com SAUDACAO vaga ("bom dia!", "oi") e a
+  // DANI ficaria muda -> reconhece a pendencia e pergunta a continuidade (ideia
+  // da Rosana). REMOVIDO o generico "Deixa eu confirmar isso certinho..." em
+  // mensagem substantiva: a Rosana reclamou MUITO que ficava sem contexto e
+  // ainda poluia o historico (o modelo via a propria msg injetada e travava de
+  // novo). Sem foto/saudacao, a DANI fica em silencio e o MODELO responde (o
+  // prompt cobre tamanho, "outra estampa/cor", etc.).
   if (
     !finalReply &&
     !isFarewell &&
     !jaFechouOuPerguntou &&
     attachments.length === 0 &&
-    message.trim().length > 0
+    isGreeting
   ) {
-    // Saudacao vaga ("bom dia!", "oi") -> reconhece a pendencia e pergunta a
-    // continuidade (ideia da Rosana), em vez do generico "deixa eu confirmar".
-    finalReply = isGreeting
-      ? 'Oi, tudo bem?! 💕 Vi que você pode estar aguardando um retorno do nosso atendimento. É essa continuidade que você deseja, ou precisa de algum outro produto ou informação?'
-      : 'Deixa eu confirmar isso certinho pra você e já te falo! 💕';
+    finalReply =
+      'Oi, tudo bem?! 💕 Vi que você pode estar aguardando um retorno do nosso atendimento. É essa continuidade que você deseja, ou precisa de algum outro produto ou informação?';
     logger.info(
-      { userMsg: message.slice(0, 50), isGreeting },
-      '[DANI] rede de seguranca final: msg com conteudo sem resposta',
+      { userMsg: message.slice(0, 50) },
+      '[DANI] rede de seguranca: saudacao vaga -> pergunta continuidade',
     );
   }
 
