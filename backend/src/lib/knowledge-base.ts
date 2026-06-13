@@ -172,7 +172,7 @@ function detectCategories(msg: string): string[] {
   if (/não precisa|obrigada|tchau|valeu|vou pensar|caro|não|deixa|depois/.test(msg)) {
     out.push('vendas');
   }
-  if (/tamanho|medida|veste|n[úu]mero|qual tamanho|que tamanho|idade|anos\b|\bcm\b|altura|tabela|peso/.test(msg)) {
+  if (/tamanho|medida|veste|n[úu]mero|qual tamanho|que tamanho|idade|anos\b|m[êe]s|m[êe]ses|rec[ée]m|\brn\b|\bcm\b|altura|tabela|peso/.test(msg)) {
     out.push('tamanhos');
   }
   return out;
